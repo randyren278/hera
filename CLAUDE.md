@@ -39,12 +39,30 @@ These four hooks read and write the search index around each turn so relevant pa
 becomes a scored citation that shifts the vault's ranking. Cite things
 that were actually useful. Do not sprinkle wikilinks decoratively.
 
-**Where they live after global install.** The hooks are symlinked from
-`~/.claude/hooks/` back into `<vault>/.claude/hooks/`. Their `REPO`
-variable prefers `$SECOND_BRAIN_VAULT` (from `~/.claude/second-brain.env`)
-and falls back to `pathlib.Path(__file__).resolve().parents[2]` for the
-project-local case. Edits to hook source in the vault take effect
-immediately — no reinstall needed.
+**Where they live after global install.** The hooks run **in-repo** — there is
+no `~/.claude/hooks/` mirror and no symlink anywhere. `install.py` writes an
+absolute command string into `~/.claude/settings.json` pointing straight at the
+vault:
+
+```
+"<vault>/.venv/bin/python" "<vault>/.claude/hooks/<hook>.py"
+```
+
+That string is generated per-OS by `scripts/install/hookcmd.py` and merged by
+`scripts/install/settings.py` (which supersedes the stale
+`scripts/install/settings_fragment.json`). It deliberately contains no `.`-source,
+no `&&`, and no `$VAR`, because cmd.exe cannot run those.
+
+Each hook's `REPO` variable prefers `$SECOND_BRAIN_VAULT` (from
+`~/.claude/second-brain.env`) and falls back to
+`pathlib.Path(__file__).resolve().parents[2]` — with the in-repo path, `__file__`
+is already correct. Edits to hook source in the vault take effect immediately —
+no reinstall needed, the same benefit a symlink would have given.
+
+Skills are **copied** into `~/.claude/skills/brain-*`, not linked; uninstall
+reverses that by content via the `~/.claude/.brain-manifest` record. Rationale
+in [docs/GLOBAL_INSTALL.md](docs/GLOBAL_INSTALL.md) §"Why copies + in-repo hooks,
+not symlinks"; enforced by `tests/test_no_symlink.py`.
 
 ---
 
@@ -173,9 +191,12 @@ publish" / "search the team brain" → `/brain-team retrieve`.
 - `scripts/brain_db.py --doctor` — one-shot readiness check
 - `~/.claude/second-brain.env` — vault-locator (should contain
   `SECOND_BRAIN_VAULT`)
-- `~/.claude/hooks/*.py` — symlinks to the vault's real hooks (readlink
-  should point back into the vault)
-- `~/.claude/skills/brain-*` — symlinks to the vault's real skill dirs
+- `~/.claude/settings.json` — the hook commands. Each should be an absolute
+  `"<vault>/.venv/bin/python" "<vault>/.claude/hooks/<hook>.py"` pair. There is
+  **no** `~/.claude/hooks/` directory — if you are looking for one, that is the
+  bug in your mental model, not the install.
+- `~/.claude/skills/brain-*` — real directories **copied** from the vault (not
+  links), recorded in `~/.claude/.brain-manifest`
 - `~/.claude/settings.json.brain-backup.*` — pre-install backups; use
   `install.sh --uninstall` to restore
 - `docs/GLOBAL_INSTALL.md` — global-install architecture reference

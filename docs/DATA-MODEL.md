@@ -133,6 +133,21 @@ does (ADR-01). `aliases` is a JSON array stored as text. `archived_at` is
 set on prune and is the flag that excludes a page from search
 (`WHERE archived_at IS NULL`). Index: `idx_pages_title ON pages(title)`.
 
+`pinned` (`INTEGER NOT NULL DEFAULT 0`, added by schema v2 — §2.8) marks a page
+as protected, and carries two behaviours:
+
+- **Never pruned.** `prune.eligible()` filters on `AND p.pinned = 0`, so a pinned
+  page cannot enter the candidate band however old or uncited it is.
+- **Loses to new user content.** When an ingest contradicts a pinned page,
+  `ingest.py`'s `pinned_wins` branch takes the ADR-11 `resolve_new` path — the
+  page is updated in place with `## Update` / `## Superseded` blocks instead of
+  freezing an open conflict. A pinned page therefore never blocks you with a
+  conflict queue.
+
+Seed packs set it on every page they load (`seed_index.py`, via `tags: [seed]` or
+`pinned: true` in frontmatter), but the column is general — anything may be
+pinned.
+
 ### 2.2 `citations`: the citation scoreboard (ADR-03)
 One row per scored citation. `tier` is `CHECK IN ('thinking','final')`.
 `points` is copied from config at scoring time. The `thinking` tier is
@@ -170,8 +185,11 @@ All values stored as TEXT, even numbers. Seeded once with `INSERT OR IGNORE`
 so a re-init never clobbers a tuned value. Full defaults in §3.
 
 ### 2.8 `schema_version`: migration bookkeeping
-`init_schema` inserts version **1** exactly once. Only v1 exists in code;
-there are no migration steps beyond initial creation.
+`init_schema` inserts version **1** exactly once, then applies **v2**, which adds
+`pages.pinned` to databases created before that column existed. The v2 step is
+idempotent: the `ALTER TABLE` runs only when `PRAGMA table_info(pages)` shows the
+column is absent (SQLite errors on a duplicate `ADD COLUMN`), and the version row
+is inserted once. Both live in `brain_db.init_schema`.
 
 ### 2.9 `pages_fts`: FTS5 full-text index
 `CREATE VIRTUAL TABLE pages_fts USING fts5(title, body)`. Content-owning
@@ -505,7 +523,8 @@ These are intentionally out of scope for `brain_db.py` / `locks.py` /
 - `locks.py --sweep` CLI: function exists, no `__main__` block.
 - Non-append delta merge (`replace_section`, `frontmatter_patch`): declared,
   not implemented.
-- Migrations beyond `schema_version = 1`: none in code.
+- Non-`pinned` schema migrations: none. `schema_version` reaches **2**
+  (`pages.pinned`, §2.8); nothing beyond that exists in code.
 
 ---
 
