@@ -64,8 +64,9 @@ CLAUDE_MODEL = os.environ.get("BRAIN_CLAUDE_MODEL", "sonnet")
 # subscription that means every nested call dies with "Not logged in".
 #
 # --setting-sources "" loads no user/project/local settings, so no hook from
-# any source can fire. That is a STRONGER recursion guarantee than --bare
-# gave us, which never isolated MCP servers or tools.
+# any source can fire -- the same hook surface --bare covered. The real gain
+# over --bare is --strict-mcp-config and --tools "", which additionally
+# isolate MCP servers and tools, something --bare never did.
 CLAUDE_ISOLATION = [
     "--setting-sources", "",      # no settings files -> no hooks
     "--strict-mcp-config",        # no MCP servers

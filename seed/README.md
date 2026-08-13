@@ -23,6 +23,17 @@ It writes only to the personal `brain.db` — never `team.db`.
 **Concept and entity pages only.** No `sources/` — a pack carries distilled
 knowledge, not source provenance.
 
+**Filename must match the title.** A page's filename must equal
+`ingest._slugify(title) + ".md"` — `_slugify` preserves case and spaces
+(Obsidian convention), so a page titled `Spaced Repetition` must be the file
+`Spaced Repetition.md`, not `spaced-repetition.md`. This matters because
+`ingest._existing_page_at` keys on path: a pack using kebab-case filenames
+indexes fine on its own, but a later ingest of the same concept then writes a
+*second* page at the correctly-slugified path with a fresh ULID — no
+contradiction check, no pinned-wins, just a duplicated page in search
+results. See `tests/fixtures/seed-pack/` for a worked example of correctly
+named pages.
+
 Each page needs this frontmatter:
 
 ```yaml

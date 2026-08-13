@@ -32,10 +32,12 @@ import ingest as _ingest  # noqa: E402
 
 # Nested-call configuration is defined once, in ingest. Re-exported here so
 # this module's call site and its tests can refer to the same values.
+# NOTE: these are a snapshot taken at import time, not a live binding -- a
+# test that patches ingest via monkeypatch.setattr (rather than
+# importlib.reload) will leave these publish.CLAUDE_* values stale.
 CLAUDE_MODEL = _ingest.CLAUDE_MODEL
 CLAUDE_ISOLATION = _ingest.CLAUDE_ISOLATION
 CLAUDE_CWD = _ingest.CLAUDE_CWD
-
 
 import team_sync  # noqa: E402  (shared remote resolver + no-team message)
 

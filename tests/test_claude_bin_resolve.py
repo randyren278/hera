@@ -71,14 +71,6 @@ def test_publish_bin_resolution(monkeypatch):
     assert publish.CLAUDE_BIN == "/p/claude"
 
 
-def test_teardown_reload(monkeypatch):
-    """Restore ingest/publish to their unmonkeypatched module state so later
-    tests import the real CLAUDE_BIN."""
-    import ingest, publish
-    importlib.reload(ingest)
-    importlib.reload(publish)
-
-
 def test_bin_resolution_survives_isolation_flags(monkeypatch):
     """CLAUDE_BIN resolution is independent of the isolation flags; a change
     to one must not silently break the other."""
@@ -86,3 +78,11 @@ def test_bin_resolution_survives_isolation_flags(monkeypatch):
     assert ingest.CLAUDE_BIN == "/custom/claude"
     assert "--bare" not in ingest.CLAUDE_ISOLATION
     importlib.reload(ingest)
+
+
+def test_teardown_reload(monkeypatch):
+    """Restore ingest/publish to their unmonkeypatched module state so later
+    tests import the real CLAUDE_BIN."""
+    import ingest, publish
+    importlib.reload(ingest)
+    importlib.reload(publish)

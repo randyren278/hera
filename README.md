@@ -102,7 +102,7 @@ and pulls `nomic-embed-text` — all in the one command below.
 ```bash
 # 1. Get the repo onto the machine (clone your own remote, or copy the
 #    directory across — this vault is personal, not a published template).
-cd ~/hera
+cd wherever/you/put/it   # e.g. ~/hera
 
 # 2. Bootstrap the machine: venv, Ollama (install + start + model),
 #    brain.db, and the global hooks + skills. On a fresh machine this
