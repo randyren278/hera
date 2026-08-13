@@ -1,0 +1,222 @@
+{
+  "main": {
+    "id": "3584c1d6ed07c348",
+    "type": "split",
+    "children": [
+      {
+        "id": "9b422e096b9cb605",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "1d4e1eb9d0872995",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "e8208c6b34022737",
+    "type": "split",
+    "children": [
+      {
+        "id": "146ad8a5a3448a43",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "53ce75e8948963e1",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "0d3fbd98813b9677",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "42d378c11263998e",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "e4388775c1c5a359",
+    "type": "split",
+    "children": [
+      {
+        "id": "48db0cfc145be0dc",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "907ff34b76c853a2",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "wiki/sources/A2A Connectivity Test with test-channel.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for A2A Connectivity Test with test-channel"
+            }
+          },
+          {
+            "id": "c170e9718386717e",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "wiki/sources/A2A Connectivity Test with test-channel.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from A2A Connectivity Test with test-channel"
+            }
+          },
+          {
+            "id": "754d1095d1db80a8",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "2bef5998612326be",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "28a28f014338c9e3",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "wiki/sources/A2A Connectivity Test with test-channel.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of A2A Connectivity Test with test-channel"
+            }
+          }
+        ],
+        "currentTab": 4
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "1d4e1eb9d0872995",
+  "lastOpenFiles": [
+    "brain.db-shm",
+    "brain.db-wal",
+    "wiki/sources/Brain-Prune Session- Zero Candidates.md",
+    "wiki/sources/Windows Support Session- Symlink-Free Python Installer.md",
+    "wiki/sources/Onboarding Agent Knowledge Location Session.md",
+    "wiki/sources/Naman Weekly Work Retrieval Session (2026.16 Release Wave).md",
+    "wiki/sources/OAuthRedirectorPatch Sub-Task Validation Checklist.md",
+    "wiki/sources/§16.6 Auto Mode — Council-of-Agents Translation for the Team.md",
+    "wiki/sources/General JIRA Ticket Standards.md",
+    "wiki/sources/a2a Agent Session Status Report.md",
+    "wiki/concepts/Persistent SSO Browser Session.md",
+    "team.db-shm",
+    "team.db-wal",
+    "wiki/entities/Homebrew.md",
+    "wiki/entities/Collect.py.md",
+    "wiki/entities/Ice.md",
+    "wiki/entities/SwiftBar.md",
+    "wiki/concepts/Research Council Reframe To Command Center.md",
+    "wiki/concepts/TUI Aesthetic Menu Rendering.md",
+    "wiki/concepts/macOS Menu Bar Overflow Management.md",
+    "wiki/concepts/Conversation Timestamp Versus File Mtime.md",
+    "wiki/concepts/Claude Agent Process Detection.md",
+    "wiki/concepts/Claude Agent Status Menu Bar App.md",
+    "wiki/sources/Building a Claude Agent Status Menu Bar App.md",
+    "wiki/sources/Session Transcript 7216a670.md",
+    "wiki/entities/Project Routing.md",
+    "wiki/entities/Superpowers Brainstorming Skill.md",
+    "wiki/entities/OSS D2A SvelteKit App.md",
+    "wiki/concepts/Outcome Writer.md",
+    "vault-overview.html",
+    "tests/__pycache__/test_ingest_dedup.cpython-314-pytest-9.1.1.pyc",
+    "scripts/__pycache__/dedup_pages.cpython-314.pyc",
+    "tests/__pycache__/test_dedup_pages.cpython-314-pytest-9.1.1.pyc",
+    "tests/test_ingest_dedup.py",
+    "tests/test_dedup_pages.py",
+    "public/orca.png"
+  ]
+}

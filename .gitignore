@@ -1,0 +1,62 @@
+# --- Virtual env & Python caches ---
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# --- Runtime state (per-user, never checked in) ---
+brain.db
+brain.db-wal
+brain.db-shm
+team.db
+team.db-wal
+team.db-shm
+.brain/
+.checkpoints/
+
+# --- Vault runtime scratch ---
+wiki/.pending/
+wiki/.archive/
+wiki/.raw/articles/*
+wiki/.raw/images/*
+!wiki/.raw/articles/.gitkeep
+!wiki/.raw/images/.gitkeep
+
+# --- Personal notes never ship in the template (blank-slate boundary) ---
+# concepts/entities/sources hold the user's ingested pages. The template ships
+# these dirs EMPTY (just .gitkeep). Ignoring the content here is what keeps a
+# personal vault's pages from ever being committed into the source repo again.
+wiki/concepts/*
+wiki/entities/*
+wiki/sources/*
+!wiki/concepts/.gitkeep
+!wiki/entities/.gitkeep
+!wiki/sources/.gitkeep
+
+# superpowers brainstorm scratch (mockups, server state)
+.superpowers/
+
+# --- Team-brain staging (a private clone of the shared repo) ---
+team-brain-staging/
+
+# --- Maintainer-only, source-repo-local (never ships to clones) ---
+# The repo-role banner ("this repo is the SOURCE/TEMPLATE") is correct only in
+# the magnum-opus working copy; tracking it would carry it to every clone where
+# it inverts. Kept local, untracked, on purpose.
+MAINTAINERS.md
+# Doc-CI checkers: they verify THIS repo's own docs are internally consistent
+# (links, mermaid fences, team-hybrid consistency, global-mirror). Authoring/CI
+# tooling, not consumer runtime — a note-taking clone has no use for them. Kept
+# local + untracked, same posture as MAINTAINERS.md. (check_team_remote.sh is
+# real runtime — used by /brain-setup — and stays tracked.)
+scripts/check_doc_links.sh
+scripts/check_mermaid_fences.sh
+scripts/check_docs_consistency.sh
+scripts/check_global_mirror.sh
+scripts/_check_store_nodes.py
+
+# --- Editor / OS junk ---
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": ". \"$HOME/.claude/second-brain.env\" && \"$SECOND_BRAIN_VAULT/.venv/bin/python\" \"$HOME/.claude/hooks/session_start.py\"" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": ". \"$HOME/.claude/second-brain.env\" && \"$SECOND_BRAIN_VAULT/.venv/bin/python\" \"$HOME/.claude/hooks/prompt_inject.py\"", "timeout": 10 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": ". \"$HOME/.claude/second-brain.env\" && \"$SECOND_BRAIN_VAULT/.venv/bin/python\" \"$HOME/.claude/hooks/stop_score.py\"", "async": true, "timeout": 120 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": ". \"$HOME/.claude/second-brain.env\" && \"$SECOND_BRAIN_VAULT/.venv/bin/python\" \"$HOME/.claude/hooks/session_end_file.py\"", "async": true, "timeout": 600 }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+# Blocklist for CP-7 e2e_publish. Any of these strings appearing in a staged
+# team-brain-staging/<owner>/* file after redaction indicates the strip
+# failed. Case-insensitive substring match — no regex.
+Wilhelmina Blackthorn
+oksana-privcorp
+Randy's personal SSH key
+this framework is genuinely awful
+my private employer

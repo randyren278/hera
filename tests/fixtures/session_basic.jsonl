@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"today I read a great overview of embeddings and vector databases."}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Nice — anything you want to note about it in the vault? Common patterns you saw: dense embeddings from a text model, ANN search over the vectors, and hybrid retrieval augmenting with BM25."}]}}
+{"type":"user","message":{"role":"user","content":"yes let's note that hybrid retrieval using RRF is more robust than pure vector search on domains with a lot of jargon."}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Filed that observation."}]}}

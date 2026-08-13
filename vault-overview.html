@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Randy Vault — Knowledge Base Overview</title>
+<style>
+  :root {
+    --surface-0: #f4f4f2;
+    --surface-1: #fcfcfb;
+    --surface-2: #f0efec;
+    --border: #e3e2dd;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #8a8a84;
+    --s1: #2a78d6;  /* blue - concept */
+    --s2: #1baf7a;  /* aqua - entity */
+    --s3: #eda100;  /* yellow - source */
+    --good: #0ca30c;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --grid: #ecebe7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-0: #121211;
+      --surface-1: #1a1a19;
+      --surface-2: #242422;
+      --border: #33332f;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #86867d;
+      --s1: #3987e5;
+      --s2: #199e70;
+      --s3: #c98500;
+      --grid: #2a2a27;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface-0); color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5; padding: 32px 20px 80px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  header h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  header .sub { color: var(--text-secondary); font-size: 14px; margin: 0 0 4px; }
+  header .gen { color: var(--text-muted); font-size: 12px; }
+  .grid-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 14px; margin: 24px 0; }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .tile .num { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1; }
+  .tile .lbl { font-size: 12px; color: var(--text-secondary); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .tile .note { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+  .tile.accent-crit .num { color: var(--critical); }
+  .tile.accent-warn .num { color: var(--serious); }
+  .tile.accent-good .num { color: var(--good); }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px 24px; margin: 18px 0;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .card .cap { font-size: 13px; color: var(--text-secondary); margin: 0 0 18px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 720px){ .row { grid-template-columns: 1fr; } }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin: 9px 0; }
+  .bar-row .name { width: 108px; font-size: 13px; color: var(--text-secondary); flex-shrink: 0; text-align: right; }
+  .bar-track { flex: 1; background: var(--surface-2); border-radius: 4px; height: 22px; position: relative; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; }
+  .bar-row .val { font-size: 13px; color: var(--text-primary); width: 92px; font-variant-numeric: tabular-nums; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 4px 0 16px; font-size: 12px; color: var(--text-secondary); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .stack { display: flex; height: 30px; border-radius: 6px; overflow: hidden; background: var(--surface-2); }
+  .stack > div { position: relative; }
+  .stack .seg-gap { box-shadow: inset -2px 0 0 var(--surface-1); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--text-secondary); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-secondary); }
+  .pill.concept { color: var(--s1); border-color: var(--s1); }
+  .pill.entity { color: var(--s2); border-color: var(--s2); }
+  .pill.source { color: var(--s3); border-color: var(--s3); }
+  .minibar { display: inline-block; height: 8px; border-radius: 3px; background: var(--s1); vertical-align: middle; }
+  .insights li { margin: 8px 0; font-size: 14px; }
+  .insights b { color: var(--text-primary); }
+  .tag { font-weight: 600; }
+  .tag.crit { color: var(--critical); } .tag.warn { color: var(--serious); } .tag.good { color: var(--good); }
+  footer { color: var(--text-muted); font-size: 12px; margin-top: 30px; text-align: center; }
+  .scrollbox { max-height: 420px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Randy Vault — Knowledge Base Overview</h1>
+    <p class="sub">Every page in the second-brain vault, indexed by type, age, and citation weight.</p>
+    <p class="gen" id="gen"></p>
+  </header>
+
+  <div class="grid-tiles" id="tiles"></div>
+
+  <div class="card">
+    <h2>Pages by type</h2>
+    <p class="cap">The vault is concept-heavy — extracted ideas outnumber sources and named entities combined.</p>
+    <div id="typebars"></div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h2>Citation coverage</h2>
+      <p class="cap">How many pages have earned any citation points at all.</p>
+      <div class="legend">
+        <span><i class="dot" style="background:var(--s1)"></i> Cited (≥1 pt)</span>
+        <span><i class="dot" style="background:var(--surface-2);border:1px solid var(--border)"></i> Never cited (0 pt)</span>
+      </div>
+      <div class="stack" id="covstack"></div>
+      <p class="cap" style="margin-top:14px" id="covnote"></p>
+    </div>
+    <div class="card">
+      <h2>Cited pages by point tier</h2>
+      <p class="cap">Among the 54 pages that were ever cited, the weight distribution.</p>
+      <div id="tierbars"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Citation coverage by page type</h2>
+    <p class="cap">Cited vs never-cited within each type. Concepts are the most-cited type by count, but the uncited tail dominates everywhere.</p>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--s1)"></i> Cited</span>
+      <span><i class="dot" style="background:var(--surface-2);border:1px solid var(--border)"></i> Uncited</span>
+    </div>
+    <div id="typecov"></div>
+  </div>
+
+  <div class="card">
+    <h2>The cited head — all 54 pages with citation points</h2>
+    <p class="cap">Ranked by total points (final-answer wikilink = 5 pts, thinking = 1 pt). Everything not in this table sits at 0 points.</p>
+    <div class="scrollbox">
+      <table id="citedtable">
+        <thead><tr><th>#</th><th>Page</th><th>Type</th><th class="num">Points</th><th class="num">Citations</th><th class="num">Age (d)</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card insights">
+    <h2>Insights across all pages</h2>
+    <ul id="insights"></ul>
+  </div>
+
+  <footer>Generated from brain.db · read-only snapshot · nothing in the vault was modified.</footer>
+</div>
+
+<script>
+const D = {"meta": {"total": 3036, "by_type": {"source": 497, "concept": 1837, "entity": 702}, "cited": 54, "uncited": 2982, "total_citations": 81, "conflicts": {"dismissed": 87, "resolved_both": 1, "resolved_new": 1}, "config": {"points_thinking": "1", "points_final": "5", "prune_pct_low": "40", "prune_pct_high": "70", "prune_min_age_days": "30", "inject_relevance_floor": "0.015", "inject_top_n": "3", "lock_retries": "3", "lock_backoff_seconds": "1.6", "stale_lock_seconds": "600"}, "generated": "2026-07-16T18:26:51.204727+00:00", "type_cited": {"source": {"cited": 10, "uncited": 487}, "concept": {"cited": 31, "uncited": 1806}, "entity": {"cited": 13, "uncited": 689}}, "tiers": {"1-5": 38, "6-10": 9, "11-15": 4, "16-25": 3}}, "cited_pages": [{"t": "LRT NFT Testing", "y": "concept", "p": 25, "c": 5, "a": 3.1}, {"t": "SonarQube KPI Cron Fix Brief", "y": "source", "p": 20, "c": 4, "a": 6.2}, {"t": "Wave Timeline 2026.16", "y": "entity", "p": 20, "c": 4, "a": 3.1}, {"t": "Supervision Paradox", "y": "concept", "p": 15, "c": 3, "a": 7.3}, {"t": "Randy", "y": "entity", "p": 15, "c": 3, "a": 6.2}, {"t": "Reciprocal Rank Fusion", "y": "concept", "p": 15, "c": 3, "a": 6.2}, {"t": "Onboarding Agent", "y": "concept", "p": 15, "c": 3, "a": 2.2}, {"t": "Pritesh Tailor", "y": "entity", "p": 10, "c": 2, "a": 7.3}, {"t": "Agentic AI for Busy Product Managers", "y": "source", "p": 10, "c": 2, "a": 7.3}, {"t": "Agentic AI", "y": "concept", "p": 10, "c": 2, "a": 7.3}, {"t": "What You Need to Know About AI Before You Design Anything", "y": "source", "p": 10, "c": 2, "a": 7.3}, {"t": "Retrieval-Augmented Generation", "y": "entity", "p": 10, "c": 2, "a": 7.3}, {"t": "Agentic AI Product Lifecycle", "y": "concept", "p": 10, "c": 2, "a": 7.3}, {"t": "SonarQube KPI Cron Fix", "y": "source", "p": 10, "c": 2, "a": 7.1}, {"t": "Onboarding-Agent Purpose & Patterns Brief", "y": "concept", "p": 10, "c": 2, "a": 2.2}, {"t": "Onboarding Agent Knowledge Location Session", "y": "source", "p": 10, "c": 2, "a": 0.4}, {"t": "FPA65 Ticket Triage Agent", "y": "source", "p": 5, "c": 1, "a": 7.3}, {"t": "FPA65 Triage Agent \u2014 How to Use", "y": "source", "p": 5, "c": 1, "a": 7.3}, {"t": "FPA65 Commenting And Escalation Rules", "y": "concept", "p": 5, "c": 1, "a": 7.3}, {"t": "Special Cases Decision Tree", "y": "source", "p": 5, "c": 1, "a": 7.3}, {"t": "T_QTI_Jira1", "y": "entity", "p": 5, "c": 1, "a": 7.3}, {"t": "The Four-Layer AI Stack", "y": "concept", "p": 5, "c": 1, "a": 7.3}, {"t": "The Tool Boundary", "y": "concept", "p": 5, "c": 1, "a": 7.3}, {"t": "Context Is the Product", "y": "concept", "p": 5, "c": 1, "a": 7.3}, {"t": "Distributional Evaluation", "y": "concept", "p": 5, "c": 1, "a": 7.3}, {"t": "Dual-Path Skill Deployment", "y": "concept", "p": 5, "c": 1, "a": 7.3}, {"t": "AI-Generated Slide Tells", "y": "concept", "p": 5, "c": 1, "a": 7.2}, {"t": "Claude", "y": "entity", "p": 5, "c": 1, "a": 7.2}, {"t": "FPA65 Ticket Auto-Assignment", "y": "concept", "p": 5, "c": 1, "a": 7.2}, {"t": "Playwright Best Practices", "y": "concept", "p": 5, "c": 1, "a": 7.2}, {"t": "onboard", "y": "entity", "p": 5, "c": 1, "a": 7.1}, {"t": "NULL String Poison", "y": "concept", "p": 5, "c": 1, "a": 7.1}, {"t": "Self-Healing Cron", "y": "concept", "p": 5, "c": 1, "a": 7.1}, {"t": "sonarqube_kpis.py", "y": "entity", "p": 5, "c": 1, "a": 7.1}, {"t": "team-brain-staging", "y": "entity", "p": 5, "c": 1, "a": 6.8}, {"t": "Half-Installed State", "y": "concept", "p": 5, "c": 1, "a": 6.8}, {"t": "Idempotent Install", "y": "concept", "p": 5, "c": 1, "a": 6.8}, {"t": "sqlite-vec", "y": "entity", "p": 5, "c": 1, "a": 6.2}, {"t": "Release Wave Timeline", "y": "concept", "p": 5, "c": 1, "a": 3.1}, {"t": "BM25 Plus Dense RRF Hybrid Search", "y": "concept", "p": 5, "c": 1, "a": 2.2}, {"t": "TPC Onboarding Progression", "y": "concept", "p": 5, "c": 1, "a": 2.2}, {"t": "Onboarding Tool \u2014 Work Progress", "y": "source", "p": 5, "c": 1, "a": 2.2}, {"t": "Recipe-Driven Audit Engine", "y": "concept", "p": 5, "c": 1, "a": 2.1}, {"t": "AI As A Productivity Tool For Product Managers", "y": "concept", "p": 5, "c": 1, "a": 0.4}, {"t": "AI Product Management", "y": "concept", "p": 5, "c": 1, "a": 0.4}, {"t": "How the PM Role Changes With AI", "y": "source", "p": 5, "c": 1, "a": 0.4}, {"t": "AI As A PM Tool", "y": "concept", "p": 5, "c": 1, "a": 0.4}, {"t": "Evals As A PM Artifact", "y": "concept", "p": 5, "c": 1, "a": 0.4}, {"t": "Probabilistic Thinking In Products", "y": "concept", "p": 5, "c": 1, "a": 0.4}, {"t": "Designing UX For Uncertainty", "y": "concept", "p": 5, "c": 1, "a": 0.4}, {"t": "PM Prototyping Without Engineering", "y": "concept", "p": 5, "c": 1, "a": 0.4}, {"t": "v0", "y": "entity", "p": 5, "c": 1, "a": 0.4}, {"t": "Cursor", "y": "entity", "p": 5, "c": 1, "a": 0.4}, {"t": "Lovable", "y": "entity", "p": 5, "c": 1, "a": 0.4}]};
+const M = D.meta;
+const fmt = n => n.toLocaleString();
+
+document.getElementById('gen').textContent =
+  'Snapshot ' + new Date(M.generated).toLocaleString() + ' · ' + fmt(M.total) + ' pages total';
+
+// Tiles
+const citedPct = (M.cited / M.total * 100).toFixed(1);
+const tiles = [
+  {num: fmt(M.total), lbl: 'Total pages', note: '0 archived'},
+  {num: fmt(M.total_citations), lbl: 'Citation events', note: M.cited + ' distinct pages'},
+  {num: citedPct + '%', lbl: 'Pages ever cited', note: fmt(M.uncited) + ' at 0 pts', cls:'accent-warn'},
+  {num: fmt(M.conflicts.dismissed||0), lbl: 'Conflicts dismissed', note: (M.conflicts.resolved_new||0)+(M.conflicts.resolved_both||0)+' resolved'},
+  {num: M.config.prune_min_age_days + 'd', lbl: 'Prune min age', note: 'band '+M.config.prune_pct_low+'–'+M.config.prune_pct_high+'%'},
+];
+document.getElementById('tiles').innerHTML = tiles.map(t =>
+  `<div class="tile ${t.cls||''}"><div class="num">${t.num}</div><div class="lbl">${t.lbl}</div><div class="note">${t.note}</div></div>`
+).join('');
+
+// Type bars
+const typeColor = {concept:'var(--s1)', entity:'var(--s2)', source:'var(--s3)'};
+const types = Object.entries(M.by_type).sort((a,b)=>b[1]-a[1]);
+const maxType = Math.max(...types.map(t=>t[1]));
+document.getElementById('typebars').innerHTML = types.map(([k,v]) =>
+  `<div class="bar-row"><div class="name">${k}</div>
+   <div class="bar-track"><div class="bar-fill" style="width:${v/maxType*100}%;background:${typeColor[k]}"></div></div>
+   <div class="val">${fmt(v)} · ${(v/M.total*100).toFixed(0)}%</div></div>`
+).join('');
+
+// Coverage stack
+const cw = M.cited/M.total*100, uw = M.uncited/M.total*100;
+document.getElementById('covstack').innerHTML =
+  `<div class="seg-gap" style="width:${Math.max(cw,1.2)}%;background:var(--s1)"></div>
+   <div style="width:${uw}%;background:var(--surface-2)"></div>`;
+document.getElementById('covnote').textContent =
+  `${M.cited} of ${fmt(M.total)} pages (${citedPct}%) carry any weight. The ranking rests on a thin head; the long tail is undifferentiated.`;
+
+// Tier bars
+const tierOrder = ['1-5','6-10','11-15','16-25'];
+const tierMax = Math.max(...tierOrder.map(t=>M.tiers[t]||0));
+document.getElementById('tierbars').innerHTML = tierOrder.map(t =>
+  `<div class="bar-row"><div class="name">${t} pts</div>
+   <div class="bar-track"><div class="bar-fill" style="width:${(M.tiers[t]||0)/tierMax*100}%;background:var(--s1)"></div></div>
+   <div class="val">${M.tiers[t]||0} pages</div></div>`
+).join('');
+
+// Type coverage stacked rows
+const tcMax = Math.max(...Object.values(M.type_cited).map(v=>v.cited+v.uncited));
+document.getElementById('typecov').innerHTML = Object.entries(M.type_cited)
+  .sort((a,b)=>(b[1].cited+b[1].uncited)-(a[1].cited+a[1].uncited)).map(([k,v]) => {
+  const tot = v.cited+v.uncited;
+  const w = tot/tcMax*100;
+  const cin = v.cited/tot*100;
+  return `<div class="bar-row"><div class="name">${k}</div>
+    <div class="bar-track" style="width:${w}%">
+      <div class="bar-fill seg-gap" style="width:${cin}%;background:${typeColor[k]};position:absolute;left:0;top:0"></div>
+    </div>
+    <div class="val">${v.cited}/${fmt(tot)}</div></div>`;
+}).join('');
+
+// Cited table
+const maxPts = Math.max(...D.cited_pages.map(p=>p.p));
+document.querySelector('#citedtable tbody').innerHTML = D.cited_pages.map((p,i) =>
+  `<tr><td class="num">${i+1}</td>
+   <td>${p.t}</td>
+   <td><span class="pill ${p.y}">${p.y}</span></td>
+   <td class="num"><span class="minibar" style="width:${Math.max(p.p/maxPts*40,3)}px"></span> ${p.p}</td>
+   <td class="num">${p.c}</td>
+   <td class="num">${p.a}</td></tr>`
+).join('');
+
+// Insights
+const insights = [
+  `<span class="tag crit">Sparse citation signal.</span> Only <b>${M.cited} of ${fmt(M.total)} pages (${citedPct}%)</b> have ever been cited. The other <b>${fmt(M.uncited)}</b> sit at 0 points — the ranking is driven by a tiny head while the vast majority is undifferentiated.`,
+  `<span class="tag warn">Concept-heavy vault.</span> <b>${fmt(M.by_type.concept)} concepts</b> (${(M.by_type.concept/M.total*100).toFixed(0)}%) vs ${fmt(M.by_type.entity)} entities and ${fmt(M.by_type.source)} sources. Ingest is extracting far more ideas than it links back to named things or origins.`,
+  `<span class="tag good">Young vault.</span> Every page is under 15 days old, so nothing meets the 30-day prune floor yet — which is why <b>/brain-prune returned 0 candidates</b>. The floor is doing its job: citations need time to accumulate before pruning is meaningful.`,
+  `<span class="tag">Top page:</span> <b>LRT NFT Testing</b> (25 pts, 5 citations) leads, followed by <b>SonarQube KPI Cron Fix Brief</b> and <b>Wave Timeline 2026.16</b> (20 pts each). These are the pages actually shaping retrieval.`,
+  `<span class="tag warn">Conflict queue is mostly auto-dismissed.</span> <b>${M.conflicts.dismissed} dismissed</b> vs only ${(M.conflicts.resolved_new||0)+(M.conflicts.resolved_both||0)} explicitly resolved — worth spot-checking that real contradictions aren't being silently discarded.`,
+  `<span class="tag">Pruning implication.</span> At the 5-day threshold, 2,368 pages become eligible and 711 land in the prune band — almost all at 0 points. If you ever lower the floor, narrow the band or batch it; don't archive 711 low-signal pages blind.`,
+];
+document.getElementById('insights').innerHTML = insights.map(i=>`<li>${i}</li>`).join('');
+</script>
+</body>
+</html>
