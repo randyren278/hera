@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/orca.png" width="160" alt="Hera">
+  <img src="public/hera.png" width="180" alt="Hera">
 </p>
 
 <h1 align="center">Hera</h1>
