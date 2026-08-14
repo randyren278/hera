@@ -1,6 +1,6 @@
 """Unit test for scripts/dedup_pages.py against a synthetic duplicated DB.
 
-Builds a throwaway brain.db with one path carrying 3 rows (fts_map + vec rows
+Builds a throwaway hera.db with one path carrying 3 rows (fts_map + vec rows
 each, plus a citation on a loser), runs apply(), and asserts:
   - exactly one live pages row for that path (the oldest survivor)
   - the citation was re-pointed onto the survivor (no orphan)
@@ -17,16 +17,16 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 import dedup_pages  # noqa: E402
 
 
 @pytest.fixture
 def conn(tmp_path, monkeypatch):
-    db = tmp_path / "brain.db"
-    monkeypatch.setattr(brain_db, "DB_PATH", db)
-    monkeypatch.setattr(dedup_pages.brain_db, "DB_PATH", db)
-    c = brain_db.ensure_ready(db)
+    db = tmp_path / "hera.db"
+    monkeypatch.setattr(hera_db, "DB_PATH", db)
+    monkeypatch.setattr(dedup_pages.hera_db, "DB_PATH", db)
+    c = hera_db.ensure_ready(db)
     # pages_fts_map is created lazily by ingest.py/search.py, not in the base
     # schema — create it here so the synthetic fixture mirrors a real vault.
     c.execute("""CREATE TABLE IF NOT EXISTS pages_fts_map (
@@ -44,10 +44,10 @@ def _add_page(c, page_id, path, created, body="body"):
     cur = c.execute("INSERT INTO pages_fts(title, body) VALUES ('Dup', ?)", (body,))
     c.execute("INSERT INTO pages_fts_map(rowid, page_id) VALUES (?, ?)", (cur.lastrowid, page_id))
     c.execute("INSERT INTO pages_vec(page_id, embedding) VALUES (?, ?)",
-              (page_id, brain_db_pack([0.0] * 768)))
+              (page_id, hera_db_pack([0.0] * 768)))
 
 
-def brain_db_pack(vec):
+def hera_db_pack(vec):
     import embed
     return embed.pack(vec)
 

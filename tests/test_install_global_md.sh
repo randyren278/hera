@@ -49,7 +49,7 @@ python3 -c "
 t = open('$C/.claude/CLAUDE.md').read()
 v = open('$REPO/CLAUDE.md').read()
 assert t.startswith('USER GLOBAL RULES'), 'preexisting content lost'
-assert t.count('>>> second-brain') == 1, 'not exactly one block'
+assert t.count('>>> Hera') == 1, 'not exactly one block'
 assert v.strip() in t, 'CLAUDE.md not embedded verbatim'
 assert 'SOURCE / TEMPLATE' not in t, 'repo-role banner leaked into global mirror'
 assert 'Never push to' in t, 'invariants missing from global mirror'
@@ -57,7 +57,7 @@ assert 'Never push to' in t, 'invariants missing from global mirror'
 report "append: preserves user content + embeds CLAUDE.md (banner-free)" $?
 
 # a backup of the prior CLAUDE.md must exist
-ls "$C/.claude/CLAUDE.md".brain-backup.* >/dev/null 2>&1
+ls "$C/.claude/CLAUDE.md".hera-backup.* >/dev/null 2>&1
 report "append: backed up the pre-existing CLAUDE.md" $?
 
 # --- Case D: uninstall roundtrip restores user content byte-for-byte --------

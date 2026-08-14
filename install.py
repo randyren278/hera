@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""install.py — cross-platform installer for the Second Brain vault.
+"""install.py — cross-platform installer for the Hera vault.
 
 Pure-Python replacement for install.sh/lib.sh/locator.sh/preflight.sh's
 orchestration. Works on POSIX and native Windows (no bash, no symlinks).
@@ -44,7 +44,7 @@ import ui  # scripts/install/ui.py — TTY-aware pretty-print layer
 # on the machine and re-exec install.py under it, so the "wrong interpreter"
 # preflight failure can never reach the user.
 
-_REEXEC_GUARD = "SECOND_BRAIN_REEXEC"
+_REEXEC_GUARD = "HERA_REEXEC"
 
 
 def _this_python_can_load_extensions() -> bool:
@@ -110,10 +110,10 @@ def _ensure_capable_interpreter(argv: list[str]) -> None:
         sys.exit(1)
 
 HOOK_FILES = ["session_start.py", "prompt_inject.py", "stop_score.py", "session_end_file.py"]
-SKILL_DIRS = ["brain-setup", "brain-ingest", "brain-conflicts", "brain-prune", "brain-team"]
+SKILL_DIRS = ["hera-setup", "hera-ingest", "hera-conflicts", "hera-prune", "hera-team"]
 
-BRAIN_MD_BEGIN = "# >>> second-brain (managed by install.py) >>>"
-BRAIN_MD_END = "# <<< second-brain <<<"
+HERA_MD_BEGIN = "# >>> Hera (managed by install.py) >>>"
+HERA_MD_END = "# <<< Hera <<<"
 
 
 def claude_home() -> pathlib.Path:
@@ -140,7 +140,7 @@ class Runner:
 
 def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) -> int:
     home = claude_home()
-    loc_env = home / "second-brain.env"
+    loc_env = home / "hera.env"
     global_settings = home / "settings.json"
     global_skills = home / "skills"
     project_settings = VAULT / ".claude" / "settings.json"
@@ -149,7 +149,7 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
     vault_md = VAULT / "CLAUDE.md"
     r = Runner(dry)
 
-    ui.header("Second Brain - installer", {
+    ui.header("Hera - installer", {
         "vault": str(VAULT),
         "mode ": f"install   dry={int(dry)}",
         "home ": str(home),
@@ -213,28 +213,28 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
         else:
             ui.info("(preflight.py not present yet — venv bootstrapped)")
 
-    # Step 2: initialize brain.db (idempotent).
-    ui.step("step 2/7: brain.db")
+    # Step 2: initialize hera.db (idempotent).
+    ui.step("step 2/7: hera.db")
     if dry:
-        ui.info("[dry] brain_db.py --init (if brain.db absent)")
+        ui.info("[dry] hera_db.py --init (if hera.db absent)")
     else:
-        db = VAULT / "brain.db"
+        db = VAULT / "hera.db"
         if db.exists() and db.stat().st_size > 0:
-            ui.info("brain.db already present — skipping --init")
+            ui.info("hera.db already present — skipping --init")
         else:
             import venv as venv_mod
             py = venv_mod.venv_python(VAULT)
-            rc = subprocess.run([str(py), str(VAULT / "scripts" / "brain_db.py"), "--init"],
+            rc = subprocess.run([str(py), str(VAULT / "scripts" / "hera_db.py"), "--init"],
                                 capture_output=True, text=True)
             if rc.returncode != 0:
-                print(f"install: brain.db init failed: {rc.stderr}", file=sys.stderr)
+                print(f"install: hera.db init failed: {rc.stderr}", file=sys.stderr)
                 return 1
-            ui.info("brain.db initialized")
+            ui.info("hera.db initialized")
 
     # Step 3: locator file.
     ui.step(f"step 3/7: locator ({loc_env})")
     if dry:
-        ui.info(f"[dry] write SECOND_BRAIN_VAULT into {loc_env}")
+        ui.info(f"[dry] write HERA_VAULT into {loc_env}")
     else:
         import locator
         locator.write_locator(VAULT, loc_env)
@@ -282,13 +282,13 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
         if should:
             home.mkdir(parents=True, exist_ok=True)
             _append_global_claudemd(global_md, vault_md)
-            ui.info(f"appended second-brain block to {global_md}")
+            ui.info(f"appended Hera block to {global_md}")
         else:
             ui.info("(skipped — global CLAUDE.md unchanged)")
 
     print()
     ui.plain("install: complete.")
-    ui.info("Restart Claude Code, then run /brain-setup to finish vault scaffolding.")
+    ui.info("Restart Claude Code, then run /hera-setup to finish vault scaffolding.")
     ui.info(f"To undo: python {VAULT / 'install.py'} --uninstall")
     return 0
 
@@ -308,7 +308,7 @@ def _prompt_global_md(global_md: pathlib.Path) -> bool:
 
 def do_uninstall(dry: bool) -> int:
     home = claude_home()
-    loc_env = home / "second-brain.env"
+    loc_env = home / "hera.env"
     global_settings = home / "settings.json"
     global_skills = home / "skills"
     project_settings = VAULT / ".claude" / "settings.json"
@@ -316,7 +316,7 @@ def do_uninstall(dry: bool) -> int:
     global_md = home / "CLAUDE.md"
     r = Runner(dry)
 
-    ui.header("Second Brain - uninstaller", {
+    ui.header("Hera - uninstaller", {
         "vault": str(VAULT),
         "home ": str(home),
         "mode ": f"uninstall   dry={int(dry)}",
@@ -325,7 +325,7 @@ def do_uninstall(dry: bool) -> int:
     # Step 1: remove copied skills we created (tracked via manifest).
     ui.step("step 1/5: remove copied skills")
     if dry:
-        ui.info(f"[dry] remove second-brain skills from {global_skills} (per manifest)")
+        ui.info(f"[dry] remove Hera skills from {global_skills} (per manifest)")
     else:
         import registration
         removed = registration.unregister_skills(VAULT, global_skills, home)
@@ -366,12 +366,12 @@ def do_uninstall(dry: bool) -> int:
     # Step 5: strip our CLAUDE.md block.
     ui.step("step 5/5: strip global CLAUDE.md block")
     if dry:
-        ui.info(f"[dry] remove second-brain block from {global_md}")
-    elif global_md.exists() and BRAIN_MD_BEGIN.split("(")[0] in global_md.read_text(encoding="utf-8"):
+        ui.info(f"[dry] remove Hera block from {global_md}")
+    elif global_md.exists() and HERA_MD_BEGIN.split("(")[0] in global_md.read_text(encoding="utf-8"):
         _remove_global_claudemd_block(global_md)
-        ui.info(f"removed second-brain block from {global_md}")
+        ui.info(f"removed Hera block from {global_md}")
     else:
-        ui.info("(no second-brain block to remove)")
+        ui.info("(no Hera block to remove)")
 
     print()
     ui.plain("uninstall: complete.")
@@ -388,19 +388,19 @@ def _append_global_claudemd(target: pathlib.Path, source: pathlib.Path) -> None:
     if target.exists():
         _backup(target)
     note = (
-        "# This block is managed by the Second Brain install.py. It mirrors\n"
+        "# This block is managed by the Hera install.py. It mirrors\n"
         "# the global CLAUDE.md so citation-learning and safety invariants\n"
         "# stay active in every directory. Remove it with: install.py --uninstall\n"
     )
     body = source.read_text(encoding="utf-8").rstrip("\n")
-    block = f"{BRAIN_MD_BEGIN}\n{note}\n{body}\n{BRAIN_MD_END}\n"
+    block = f"{HERA_MD_BEGIN}\n{note}\n{body}\n{HERA_MD_END}\n"
     existing = target.read_text(encoding="utf-8") if target.exists() else ""
 
-    b = existing.find(BRAIN_MD_BEGIN)
+    b = existing.find(HERA_MD_BEGIN)
     if b != -1:
-        e = existing.find(BRAIN_MD_END, b)
+        e = existing.find(HERA_MD_END, b)
         if e != -1:
-            e_end = e + len(BRAIN_MD_END)
+            e_end = e + len(HERA_MD_END)
             if e_end < len(existing) and existing[e_end] == "\n":
                 e_end += 1
             new = existing[:b] + block + existing[e_end:]
@@ -418,13 +418,13 @@ def _remove_global_claudemd_block(target: pathlib.Path) -> None:
     if not target.exists():
         return
     existing = target.read_text(encoding="utf-8")
-    b = existing.find(BRAIN_MD_BEGIN)
+    b = existing.find(HERA_MD_BEGIN)
     if b == -1:
         return
-    e = existing.find(BRAIN_MD_END, b)
+    e = existing.find(HERA_MD_END, b)
     if e == -1:
         return
-    e_end = e + len(BRAIN_MD_END)
+    e_end = e + len(HERA_MD_END)
     if e_end < len(existing) and existing[e_end] == "\n":
         e_end += 1
     start = b
@@ -454,7 +454,7 @@ def _atomic_write(path: pathlib.Path, text: str) -> None:
 # --------------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(add_help=False, description="Second Brain installer.")
+    ap = argparse.ArgumentParser(add_help=False, description="Hera installer.")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--uninstall", action="store_true")
     ap.add_argument("--with-global-claudemd", action="store_true")

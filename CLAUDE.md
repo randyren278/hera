@@ -11,8 +11,8 @@ In plain terms: this repo is a personal knowledge base that Claude Code reads an
 
 ## What this repo is
 
-A single-user "second brain" running inside Claude Code. It's a Markdown
-vault (`wiki/`), a SQLite index (`brain.db`), a set of Python engines
+A single-user "Hera" running inside Claude Code. It's a Markdown
+vault (`wiki/`), a SQLite index (`hera.db`), a set of Python engines
 (`scripts/`), and four Claude Code hooks (`.claude/hooks/`) that stitch
 them together. Full documentation set: `docs/` (start at `docs/README.md`);
 decisions and invariants in `docs/DECISIONS.md`.
@@ -31,9 +31,9 @@ These four hooks read and write the search index around each turn so relevant pa
 | Hook | When | What it does |
 |---|---|---|
 | `session_start.py` | Session starts | Emits `hot.md`; warns about origin-scoped open conflicts and stale pending deltas |
-| `prompt_inject.py` | User submits a prompt | If the prompt looks like a coding question, runs hybrid search over `brain.db` and injects top-N pointer lines; if a team brain is configured, also runs hybrid search over `team.db` and fuses those owner-tagged (`team: <owner>`) pointers in by score. Fail-open: any error → no output. |
-| `stop_score.py` | You finish a turn | Async. Scans your final answer for `[[wikilinks]]` and `(Source: [[Title]])`, records citations in `brain.db`. Never blocks. |
-| `session_end_file.py` | Session ends | Async. Distills the transcript into `.brain/session-<id>.md` and ingests it as a `source_kind=session` page. |
+| `prompt_inject.py` | User submits a prompt | If the prompt looks like a coding question, runs hybrid search over `hera.db` and injects top-N pointer lines; if a team space is configured, also runs hybrid search over `team.db` and fuses those owner-tagged (`team: <owner>`) pointers in by score. Fail-open: any error → no output. |
+| `stop_score.py` | You finish a turn | Async. Scans your final answer for `[[wikilinks]]` and `(Source: [[Title]])`, records citations in `hera.db`. Never blocks. |
+| `session_end_file.py` | Session ends | Async. Distills the transcript into `.hera/session-<id>.md` and ingests it as a `source_kind=session` page. |
 
 **Consequence for you:** anything you cite as `[[Title]]` in a final answer
 becomes a scored citation that shifts the vault's ranking. Cite things
@@ -53,14 +53,14 @@ That string is generated per-OS by `scripts/install/hookcmd.py` and merged by
 `scripts/install/settings_fragment.json`). It deliberately contains no `.`-source,
 no `&&`, and no `$VAR`, because cmd.exe cannot run those.
 
-Each hook's `REPO` variable prefers `$SECOND_BRAIN_VAULT` (from
-`~/.claude/second-brain.env`) and falls back to
+Each hook's `REPO` variable prefers `$HERA_VAULT` (from
+`~/.claude/hera.env`) and falls back to
 `pathlib.Path(__file__).resolve().parents[2]` — with the in-repo path, `__file__`
 is already correct. Edits to hook source in the vault take effect immediately —
 no reinstall needed, the same benefit a symlink would have given.
 
-Skills are **copied** into `~/.claude/skills/brain-*`, not linked; uninstall
-reverses that by content via the `~/.claude/.brain-manifest` record. Rationale
+Skills are **copied** into `~/.claude/skills/hera-*`, not linked; uninstall
+reverses that by content via the `~/.claude/.hera-manifest` record. Rationale
 in [docs/GLOBAL_INSTALL.md](docs/GLOBAL_INSTALL.md) §"Why copies + in-repo hooks,
 not symlinks"; enforced by `tests/test_no_symlink.py`.
 
@@ -71,16 +71,16 @@ not symlinks"; enforced by `tests/test_no_symlink.py`.
 All live under `.claude/skills/`. Each has a `SKILL.md` — read it before
 acting.
 
-- `/brain-setup` — one-shot install. Run once per machine.
-- `/brain-ingest <path>` — ingest a file into the vault. Runs extraction,
+- `/hera-setup` — one-shot install. Run once per machine.
+- `/hera-ingest <path>` — ingest a file into the vault. Runs extraction,
   contradiction detection, ULID assignment, per-file locked writes.
-- `/brain-conflicts` — walk through unresolved contradictions from a
+- `/hera-conflicts` — walk through unresolved contradictions from a
   channel (freeze-on-ingest, hot.md warning, session-start alert, or
   in-context injection warning).
-- `/brain-prune` — dry-run first, then archive middle-band pages on
+- `/hera-prune` — dry-run first, then archive middle-band pages on
   approval. Only concept/entity/question pages ≥ 30 days old.
-- `/brain-team add|remove|retrieve|pull` — all team-brain operations in one
-  skill. **add**: LLM-strip + stage under `team-brain-staging/<owner>/`, then
+- `/hera-team add|remove|retrieve|pull` — all team space operations in one
+  skill. **add**: LLM-strip + stage under `team-staging/<owner>/`, then
   human-gated push (this is the honest name for the old `-private`). **remove**:
   un-publish *your own* pages — `team_remove.py list` (owner-scoped, git-dated),
   you pick conversationally, then staged `git rm` + human-gated push; owner-scoped,
@@ -94,24 +94,24 @@ acting.
   without explicit human approval.**
 
 When the user says "prune the vault" / "clean up the wiki" / "show
-candidates" → `/brain-prune`. When they say "add this to the brain" /
-"remember this" / "ingest this" → `/brain-ingest`. When they say "share/publish
-this to team" → `/brain-team add`; "remove/unpublish my team pages" →
-`/brain-team remove`; "what does the team know about X" / "what did <teammate>
-publish" / "search the team brain" → `/brain-team retrieve`.
+candidates" → `/hera-prune`. When they say "add this to Hera" /
+"remember this" / "ingest this" → `/hera-ingest`. When they say "share/publish
+this to team" → `/hera-team add`; "remove/unpublish my team pages" →
+`/hera-team remove`; "what does the team know about X" / "what did <teammate>
+publish" / "search the team space" → `/hera-team retrieve`.
 
 ---
 
 ## What NEVER to do
 
-1. **Never push to `team-brain-staging/`'s remote automatically.** The
-   remote is whatever the user configured at `/brain-setup`
-   (`SECOND_BRAIN_TEAM_REMOTE` in `~/.claude/second-brain.env`); there is no
+1. **Never push to `team-staging/`'s remote automatically.** The
+   remote is whatever the user configured at `/hera-setup`
+   (`HERA_TEAM_REMOTE` in `~/.claude/hera.env`); there is no
    fixed remote. Only push after the user has reviewed the diff and explicitly
    said "push" / "publish" / "approve".
-2. **Never edit `brain.db` by hand outside `scripts/`.** Use
-   `scripts/brain_db.py` or the engines. If you must SQL, do it via
-   `brain_db.connect()` so `sqlite-vec` is loaded.
+2. **Never edit `hera.db` by hand outside `scripts/`.** Use
+   `scripts/hera_db.py` or the engines. If you must SQL, do it via
+   `hera_db.connect()` so `sqlite-vec` is loaded.
 3. **Never bypass locking.** All writes to `wiki/` go through
    `locks.lock()`. If a page is locked, the writer overflows to
    `wiki/.pending/`, which merges on next acquire. Don't work around this.
@@ -129,19 +129,19 @@ publish" / "search the team brain" → `/brain-team retrieve`.
 6. **Never disable a hook to "quiet things down".** If a hook is
    misbehaving, fix it or report it — don't silence the loop. (To
    intentionally opt out of the loop for a session, the user sets
-   `SECOND_BRAIN_OFF=1` — see [docs/HOOKS.md](docs/HOOKS.md) §2a. That is the
+   `HERA_OFF=1` — see [docs/HOOKS.md](docs/HOOKS.md) §2a. That is the
    sanctioned off switch; editing `settings.json` to mute a hook is not.)
 7. **Never modify checks to make them pass.** (This vault was built under
    the Fable plan-verify-execute protocol; the same rule applies to any
    later verification work.)
-8. **Never bypass `$SECOND_BRAIN_VAULT`.** Hooks and skills locate the
+8. **Never bypass `$HERA_VAULT`.** Hooks and skills locate the
    vault via that env var (written by `install.sh` to
-   `~/.claude/second-brain.env`). Hard-coding a path breaks global mode
+   `~/.claude/hera.env`). Hard-coding a path breaks global mode
    and quietly points one machine at the wrong vault.
-9. **Never let team content into personal `brain.db`.** Team pages are
+9. **Never let team content into personal `hera.db`.** Team pages are
    indexed only in the separate `team.db` (ADR-14); `team_index.py` opens
-   `TEAM_DB`, the personal engines open `brain.db`. Don't merge the stores
-   or point a team writer at `brain.db` — it pollutes your local ranking,
+   `TEAM_DB`, the personal engines open `hera.db`. Don't merge the stores
+   or point a team writer at `hera.db` — it pollutes your local ranking,
    citations, and conflicts with other people's notes.
 
 ---
@@ -155,10 +155,10 @@ publish" / "search the team brain" → `/brain-team retrieve`.
   `⚠ contested — existing: X · new: Y · unresolved.`, raise it with
   the user rather than picking a side silently.
 - **Use the engines, not shell tricks.**
-  - Ingest a file → `"$SECOND_BRAIN_VAULT/.venv/bin/python" "$SECOND_BRAIN_VAULT/scripts/ingest.py" <path>`
+  - Ingest a file → `"$HERA_VAULT/.venv/bin/python" "$HERA_VAULT/scripts/ingest.py" <path>`
   - Search the vault → `from search import hybrid_search; hybrid_search(conn, q)`
-  - Resolve a conflict → `"$SECOND_BRAIN_VAULT/.venv/bin/python" "$SECOND_BRAIN_VAULT/scripts/conflicts.py" resolve <id> new|old|both`
-  - Health-check → `"$SECOND_BRAIN_VAULT/.venv/bin/python" "$SECOND_BRAIN_VAULT/scripts/brain_db.py" --doctor`
+  - Resolve a conflict → `"$HERA_VAULT/.venv/bin/python" "$HERA_VAULT/scripts/conflicts.py" resolve <id> new|old|both`
+  - Health-check → `"$HERA_VAULT/.venv/bin/python" "$HERA_VAULT/scripts/hera_db.py" --doctor`
 - **Match existing style when editing markdown pages** — frontmatter
   keys, callout syntax (`> [!info]`, `> [!source]`, `> [!conflict]`),
   wikilink format `[[Title]]`.
@@ -185,19 +185,19 @@ publish" / "search the team brain" → `/brain-team retrieve`.
 
 ## Where to look when things break
 
-- `.brain/scorer.log` — Stop-hook scoring output
-- `.brain/filing.log` — SessionEnd filing output
+- `.hera/scorer.log` — Stop-hook scoring output
+- `.hera/filing.log` — SessionEnd filing output
 - `wiki/.pending/*.delta.md` — unmerged writes waiting for a lock
-- `scripts/brain_db.py --doctor` — one-shot readiness check
-- `~/.claude/second-brain.env` — vault-locator (should contain
-  `SECOND_BRAIN_VAULT`)
+- `scripts/hera_db.py --doctor` — one-shot readiness check
+- `~/.claude/hera.env` — vault-locator (should contain
+  `HERA_VAULT`)
 - `~/.claude/settings.json` — the hook commands. Each should be an absolute
   `"<vault>/.venv/bin/python" "<vault>/.claude/hooks/<hook>.py"` pair. There is
   **no** `~/.claude/hooks/` directory — if you are looking for one, that is the
   bug in your mental model, not the install.
-- `~/.claude/skills/brain-*` — real directories **copied** from the vault (not
-  links), recorded in `~/.claude/.brain-manifest`
-- `~/.claude/settings.json.brain-backup.*` — pre-install backups; use
+- `~/.claude/skills/hera-*` — real directories **copied** from the vault (not
+  links), recorded in `~/.claude/.hera-manifest`
+- `~/.claude/settings.json.hera-backup.*` — pre-install backups; use
   `install.sh --uninstall` to restore
 - `docs/GLOBAL_INSTALL.md` — global-install architecture reference
 - `docs/ARCHITECTURE.md` — system-level map and "where to look when it breaks"
@@ -205,14 +205,14 @@ publish" / "search the team brain" → `/brain-team retrieve`.
 
 ---
 
-## Team-brain remote (configurable)
+## Team space remote (configurable)
 
-The team-brain remote is **not fixed**. `/brain-setup` asks whether you want a
+The team space remote is **not fixed**. `/hera-setup` asks whether you want a
 team space; if so, you supply a git repo URL, setup verifies access and stores
-it per-machine as `SECOND_BRAIN_TEAM_REMOTE` in `~/.claude/second-brain.env`.
+it per-machine as `HERA_TEAM_REMOTE` in `~/.claude/hera.env`.
 `team_sync.py` reads that variable; with no remote configured, every
-`/brain-team` command is a clean no-op.
+`/hera-team` command is a clean no-op.
 
-`/brain-setup` clones the configured remote into `team-brain-staging/`.
-`/brain-team add` stages redacted pages there under `<owner>/`. **Push
+`/hera-setup` clones the configured remote into `team-staging/`.
+`/hera-team add` stages redacted pages there under `<owner>/`. **Push
 requires explicit human approval every time.**

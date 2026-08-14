@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib.sh — install-time helpers for the Second Brain global installer.
+# lib.sh — install-time helpers for the Hera global installer.
 #
 # All helpers are idempotent, print actionable errors, and rc=0 on success.
 # Sourced by install.sh and by tests/test_install_lib.sh.
@@ -7,7 +7,7 @@
 # --- backup/restore ---------------------------------------------------------
 
 # backup_file <path>
-#   Copies <path> to <path>.brain-backup.<timestamp> if <path> exists.
+#   Copies <path> to <path>.hera-backup.<timestamp> if <path> exists.
 #   Prints the backup path on stdout on success.
 #   No-op with rc=0 if <path> doesn't exist (nothing to back up).
 backup_file() {
@@ -21,19 +21,19 @@ backup_file() {
   fi
   local ts
   ts=$(date +%Y%m%d-%H%M%S)
-  local dst="${src}.brain-backup.${ts}"
+  local dst="${src}.hera-backup.${ts}"
   # In the unlikely event of a same-second collision, append a suffix.
   local n=0
   while [ -e "$dst" ]; do
     n=$((n + 1))
-    dst="${src}.brain-backup.${ts}.${n}"
+    dst="${src}.hera-backup.${ts}.${n}"
   done
   cp -p "$src" "$dst" || return 1
   echo "$dst"
 }
 
 # restore_latest_backup <path>
-#   Finds the most recent <path>.brain-backup.* and restores it atomically
+#   Finds the most recent <path>.hera-backup.* and restores it atomically
 #   to <path>. rc=1 if no backup exists.
 restore_latest_backup() {
   local target="$1"
@@ -45,7 +45,7 @@ restore_latest_backup() {
   dir=$(dirname "$target")
   base=$(basename "$target")
   # Newest by mtime. -t sorts by mtime desc; head -1 picks the first.
-  latest=$(ls -1t "$dir"/"$base".brain-backup.* 2>/dev/null | head -1)
+  latest=$(ls -1t "$dir"/"$base".hera-backup.* 2>/dev/null | head -1)
   if [ -z "$latest" ]; then
     return 1
   fi
@@ -206,7 +206,7 @@ for ev, groups in list(hooks.items()):
             del hooks[ev]
 
 if not changed:
-    print("  no second-brain hook entries to remove")
+    print("  no Hera hook entries to remove")
     sys.exit(0)
 
 # Delete the file only if OUR hooks were its sole content: an empty hooks
@@ -214,14 +214,14 @@ if not changed:
 other_keys = [k for k in d.keys() if k != "hooks"]
 if not hooks and not other_keys:
     os.remove(target)
-    print("  removed settings.json (contained only second-brain hooks)")
+    print("  removed settings.json (contained only Hera hooks)")
 else:
     tmp = target + ".tmp"
     with open(tmp, "w") as f:
         json.dump(d, f, indent=2)
         f.write("\n")
     os.replace(tmp, target)
-    print("  stripped second-brain hook entries from settings.json")
+    print("  stripped Hera hook entries from settings.json")
 PYEOF
 }
 
@@ -229,8 +229,8 @@ PYEOF
 
 # Sentinels delimiting our managed block inside ~/.claude/CLAUDE.md.
 # Kept verbose enough to never collide with user-authored content.
-BRAIN_MD_BEGIN='# >>> second-brain (managed by install.sh) >>>'
-BRAIN_MD_END='# <<< second-brain <<<'
+HERA_MD_BEGIN='# >>> Hera (managed by install.sh) >>>'
+HERA_MD_END='# <<< Hera <<<'
 
 # append_global_claudemd <global_md_path> <vault_md_path>
 #   Appends (or replaces in place) a single marked block in <global_md_path>
@@ -253,20 +253,20 @@ append_global_claudemd() {
   # Back up an existing target (no-op rc=0 if absent).
   backup_file "$target" >/dev/null || return 1
 
-  BRAIN_MD_BEGIN="$BRAIN_MD_BEGIN" BRAIN_MD_END="$BRAIN_MD_END" \
+  HERA_MD_BEGIN="$HERA_MD_BEGIN" HERA_MD_END="$HERA_MD_END" \
   python3 - "$target" "$source" <<'PYEOF' || return 1
 import os
 import sys
 
 target_path = sys.argv[1]
 source_path = sys.argv[2]
-begin = os.environ["BRAIN_MD_BEGIN"]
-end = os.environ["BRAIN_MD_END"]
+begin = os.environ["HERA_MD_BEGIN"]
+end = os.environ["HERA_MD_END"]
 
 with open(source_path) as f:
     vault_body = f.read()
 
-note = ("# This block is managed by the Second Brain install.sh. It mirrors\n"
+note = ("# This block is managed by the Hera install.sh. It mirrors\n"
         "# the global CLAUDE.md so citation-learning and safety invariants\n"
         "# stay active in every directory. Remove it with: install.sh --uninstall\n")
 block = begin + "\n" + note + "\n" + vault_body.rstrip("\n") + "\n" + end + "\n"
@@ -318,14 +318,14 @@ remove_global_claudemd_block() {
     return 0
   fi
 
-  BRAIN_MD_BEGIN="$BRAIN_MD_BEGIN" BRAIN_MD_END="$BRAIN_MD_END" \
+  HERA_MD_BEGIN="$HERA_MD_BEGIN" HERA_MD_END="$HERA_MD_END" \
   python3 - "$target" <<'PYEOF' || return 1
 import os
 import sys
 
 target_path = sys.argv[1]
-begin = os.environ["BRAIN_MD_BEGIN"]
-end = os.environ["BRAIN_MD_END"]
+begin = os.environ["HERA_MD_BEGIN"]
+end = os.environ["HERA_MD_END"]
 
 with open(target_path) as f:
     existing = f.read()

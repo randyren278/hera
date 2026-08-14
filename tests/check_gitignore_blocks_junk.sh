@@ -4,7 +4,7 @@
 # Hermetic proof that the staging .gitignore team_sync.py ships actually keeps
 # a stray .DS_Store out of `git add -A` — the exact call publish.py and
 # team_remove.py make in the staging clone. Uses a scratch repo; never touches
-# the live team brain.
+# the live team space.
 
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,9 +15,9 @@ trap 'rm -rf "$SCRATCH"' EXIT
 # Point team_sync at the scratch dir as its staging clone, with no remote so
 # clone_or_pull's remote branch is skipped — we only exercise the ignore-file
 # writer against a fresh git repo.
-export SECOND_BRAIN_VAULT="$SCRATCH/vault"
-mkdir -p "$SECOND_BRAIN_VAULT/team-brain-staging"
-git -C "$SECOND_BRAIN_VAULT/team-brain-staging" init -q
+export HERA_VAULT="$SCRATCH/vault"
+mkdir -p "$HERA_VAULT/team-staging"
+git -C "$HERA_VAULT/team-staging" init -q
 
 # Invoke the real helper the engine relies on.
 python3 - <<PY
@@ -27,7 +27,7 @@ import team_sync
 team_sync._ensure_staging_gitignore()
 PY
 
-S="$SECOND_BRAIN_VAULT/team-brain-staging"
+S="$HERA_VAULT/team-staging"
 if [ ! -f "$S/.gitignore" ]; then
   echo "FAIL: team_sync did not write .gitignore"; exit 1
 fi

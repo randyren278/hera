@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""team_remove.py — un-publish YOUR OWN pages from the shared team brain.
+"""team_remove.py — un-publish YOUR OWN pages from the shared team space.
 
-The team brain is a plain git repo of redacted Markdown, one folder per owner,
-cloned into `team-brain-staging/`. This engine is the *remove* side of the loop:
+The team space is a plain git repo of redacted Markdown, one folder per owner,
+cloned into `team-staging/`. This engine is the *remove* side of the loop:
 it lists the pages YOU published (owner-scoped) and stages git-rm deletions,
-confined to `team-brain-staging/<owner>/`.
+confined to `team-staging/<owner>/`.
 
 Safety invariants (mirror the publish gate):
-  - OWNER is resolved EXACTLY like publish.py: BRAIN_OWNER env, default "randy".
-    The staging folder is team-brain-staging/<owner>/, NOT git user.name.
-  - Owner-scoped: stage-remove refuses ANY path outside team-brain-staging/<owner>/.
+  - OWNER is resolved EXACTLY like publish.py: HERA_OWNER env, default "randy".
+    The staging folder is team-staging/<owner>/, NOT git user.name.
+  - Owner-scoped: stage-remove refuses ANY path outside team-staging/<owner>/.
     A single out-of-scope path aborts the whole call and stages nothing (fail-closed).
   - It NEVER publishes to the remote. Sending staged changes upstream routes
     through publish.py (one gated, human-reviewed path). Git history is the undo
@@ -24,13 +24,13 @@ import pathlib
 import subprocess
 import sys
 
-_env_vault = os.environ.get("SECOND_BRAIN_VAULT")
+_env_vault = os.environ.get("HERA_VAULT")
 REPO = pathlib.Path(_env_vault).resolve() if _env_vault else pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 import team_sync  # noqa: E402  (shared remote resolver + no-team message)
 
-STAGING = REPO / "team-brain-staging"
-OWNER = os.environ.get("BRAIN_OWNER", "randy")
+STAGING = REPO / "team-staging"
+OWNER = os.environ.get("HERA_OWNER", "randy")
 OWNER_DIR = STAGING / OWNER
 
 
@@ -46,7 +46,7 @@ def _run(args: list[str], cwd: pathlib.Path | None = None) -> subprocess.Complet
 
 
 def _in_owner_scope(path: str) -> bool:
-    """True iff `path` resolves to a location inside team-brain-staging/<owner>/.
+    """True iff `path` resolves to a location inside team-staging/<owner>/.
 
     Standalone so tests can assert the guard directly. Fail-closed: anything
     that doesn't resolve strictly under OWNER_DIR is out of scope.
@@ -128,7 +128,7 @@ def list_pages() -> list[dict]:
 
 def stage_remove(paths: list[str]) -> dict:
     """Stage git-rm deletions for the given pages. Fail-closed on any out-of-scope
-    path: if ANY path is outside team-brain-staging/<owner>/, abort and stage nothing.
+    path: if ANY path is outside team-staging/<owner>/, abort and stage nothing.
 
     Returns {staged_removals: [...], refused: [...]}. NEVER sends to the remote.
     """
@@ -139,7 +139,7 @@ def stage_remove(paths: list[str]) -> dict:
 
     if not (STAGING / ".git").exists():
         return {"staged_removals": [], "refused": [],
-                "error": "team-brain-staging is not a git repo"}
+                "error": "team-staging is not a git repo"}
 
     staged: list[str] = []
     for p in paths:
@@ -167,7 +167,7 @@ def _abs(p: str) -> str:
 def diff() -> str:
     """Show the staging clone's staged diff (what publishing would send upstream)."""
     if not (STAGING / ".git").exists():
-        return "(team-brain-staging is not a git repo)"
+        return "(team-staging is not a git repo)"
     _run(["git", "add", "-A"], cwd=STAGING)
     r = _run(["git", "diff", "--cached", "--no-color"], cwd=STAGING)
     return r.stdout
@@ -197,7 +197,7 @@ def _cli() -> int:
             print(json.dumps(pages, indent=2))
         else:
             if not pages:
-                print(f"no published pages under team-brain-staging/{OWNER}/")
+                print(f"no published pages under team-staging/{OWNER}/")
                 return 0
             print(f"your published pages (owner={OWNER}), newest first:")
             for p in pages:

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""team_index.py — hybrid index for the team brain, keyed by publisher ULID.
+"""team_index.py — hybrid index for the team space, keyed by publisher ULID.
 
-The team brain is plain redacted Markdown, one folder per owner
-(team-brain-staging/<owner>/**). Each page already carries the publisher's
+The team space is plain redacted Markdown, one folder per owner
+(team-staging/<owner>/**). Each page already carries the publisher's
 ULID in its `id:` frontmatter (stamped by publish.py). This engine builds a
 SEPARATE SQLite index — team.db — using the SAME schema and retrieval
-substrate as the personal brain.db (FTS5 BM25 + sqlite-vec 768-dim), so team
+substrate as the personal hera.db (FTS5 BM25 + sqlite-vec 768-dim), so team
 pages are sorted and retained identically to local pages.
 
-team.db is deliberately a distinct file from brain.db: team pages must never
+team.db is deliberately a distinct file from hera.db: team pages must never
 enter the personal index (isolation invariant). Retrieval fuses the two DBs at
-query time; nothing here writes to brain.db.
+query time; nothing here writes to hera.db.
 
 CLI:
   team_index.py reindex [--all]   # reindex changed pages (or all with --all)
@@ -25,13 +25,13 @@ import pathlib
 import re
 import sys
 
-_env_vault = os.environ.get("SECOND_BRAIN_VAULT")
+_env_vault = os.environ.get("HERA_VAULT")
 REPO = pathlib.Path(_env_vault).resolve() if _env_vault else pathlib.Path(__file__).resolve().parents[1]
-STAGING = REPO / "team-brain-staging"
-TEAM_DB = pathlib.Path(os.environ.get("BRAIN_TEAM_DB", REPO / "team.db"))
+STAGING = REPO / "team-staging"
+TEAM_DB = pathlib.Path(os.environ.get("HERA_TEAM_DB", REPO / "team.db"))
 
 sys.path.insert(0, str(REPO / "scripts"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 import embed as _embed  # noqa: E402
 
 # Files under staging that are not team pages.
@@ -41,10 +41,10 @@ _SKIP_NAMES = {"README.md"}
 def open_team_db():
     """Connect to team.db with sqlite-vec loaded, ensure the canonical schema,
     then add the team-only page_meta table (owner/source/path/mtime). page_meta
-    lives here — never in brain_db.SCHEMA — so team-only columns stay out of the
+    lives here — never in hera_db.SCHEMA — so team-only columns stay out of the
     personal DB."""
-    conn = brain_db.connect(TEAM_DB)
-    brain_db.init_schema(conn)
+    conn = hera_db.connect(TEAM_DB)
+    hera_db.init_schema(conn)
     conn.execute("""CREATE TABLE IF NOT EXISTS page_meta (
         page_id  TEXT PRIMARY KEY,
         owner    TEXT NOT NULL,
@@ -86,7 +86,7 @@ def _split_frontmatter(text: str) -> tuple[dict, str]:
 
 def _owner_for(path: pathlib.Path, fm: dict) -> str:
     """Owner: prefer the `owner:` frontmatter field, else the first path segment
-    under team-brain-staging/."""
+    under team-staging/."""
     owner = fm.get("owner")
     if owner:
         return owner
@@ -112,7 +112,7 @@ def _index_page(conn, path: pathlib.Path) -> str | None:
     owner = _owner_for(path, fm)
     rel_path = path.relative_to(REPO).as_posix()
     mtime = path.stat().st_mtime
-    now = brain_db.time.strftime("%Y-%m-%dT%H:%M:%S")
+    now = hera_db.time.strftime("%Y-%m-%dT%H:%M:%S")
 
     # pages row (upsert by id).
     conn.execute(

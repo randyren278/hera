@@ -58,11 +58,11 @@ def test_model_defaults_to_sonnet(modules, monkeypatch):
 
 
 def test_model_honours_env_override(monkeypatch):
-    monkeypatch.setenv("BRAIN_CLAUDE_MODEL", "opus")
+    monkeypatch.setenv("HERA_CLAUDE_MODEL", "opus")
     import ingest
     ingest = importlib.reload(ingest)
     assert ingest.CLAUDE_MODEL == "opus"
-    monkeypatch.delenv("BRAIN_CLAUDE_MODEL")
+    monkeypatch.delenv("HERA_CLAUDE_MODEL")
     importlib.reload(ingest)
 
 

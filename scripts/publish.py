@@ -1,7 +1,7 @@
-"""publish.py — /brain-team add engine (design §9.2, ADR-08).
+"""publish.py — /hera-team add engine (design §9.2, ADR-08).
 
 Public pipeline: ingest privately (using existing ingest.py), then strip the
-result down to a public-safe subset, stage into team-brain-staging/<owner>/,
+result down to a public-safe subset, stage into team-staging/<owner>/,
 and gate the actual git push behind a human diff review.
 
 Strip rules (LLM-driven — the human diff review is the safety mechanism):
@@ -27,7 +27,7 @@ import time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 import ingest as _ingest  # noqa: E402
 
 # Nested-call configuration is defined once, in ingest. Re-exported here so
@@ -41,8 +41,8 @@ CLAUDE_CWD = _ingest.CLAUDE_CWD
 
 import team_sync  # noqa: E402  (shared remote resolver + no-team message)
 
-STAGING = REPO / "team-brain-staging"
-OWNER = os.environ.get("BRAIN_OWNER", "randy")
+STAGING = REPO / "team-staging"
+OWNER = os.environ.get("HERA_OWNER", "randy")
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN") or shutil.which("claude") or "claude"
 
 
@@ -111,7 +111,7 @@ def stage_private_ingest(source_path: str, source_kind: str = "file") -> dict:
     """Run the private ingest, then strip each produced page into staging.
 
     Returns a summary with:
-      staged: list of relative paths written under team-brain-staging/<owner>/
+      staged: list of relative paths written under team-staging/<owner>/
       skipped: list of (page_title, reason) tuples the redactor dropped
       warnings: list of ingest warnings
     """
@@ -163,7 +163,7 @@ def render_diff() -> str:
     """Render the staging clone's uncommitted diff. Returns a unified diff string."""
     owner_dir = STAGING / OWNER
     if not (STAGING / ".git").exists():
-        return "(team-brain-staging is not a git repo)"
+        return "(team-staging is not a git repo)"
     r = subprocess.run(["git", "-C", str(STAGING), "add", "-A"],
                        capture_output=True, text=True)
     r2 = subprocess.run(["git", "-C", str(STAGING), "diff", "--cached", "--no-color"],
@@ -174,7 +174,7 @@ def render_diff() -> str:
 def commit_and_push(commit_msg: str) -> str:
     """Commit staged changes and push. Returns 'ok' or an error message."""
     if not (STAGING / ".git").exists():
-        return "team-brain-staging is not a git repo"
+        return "team-staging is not a git repo"
     subprocess.run(["git", "-C", str(STAGING), "add", "-A"], check=True)
     r = subprocess.run(["git", "-C", str(STAGING), "commit", "-m", commit_msg],
                        capture_output=True, text=True)
@@ -199,7 +199,7 @@ def _cli() -> int:
     p_stage.add_argument("--json", action="store_true")
     sub.add_parser("diff")
     p_push = sub.add_parser("push")
-    p_push.add_argument("--message", "-m", default="brain: public update")
+    p_push.add_argument("--message", "-m", default="hera: public update")
     a = ap.parse_args()
 
     if a.cmd == "stage":

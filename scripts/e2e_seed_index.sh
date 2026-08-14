@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # e2e_seed_index.sh — CP-3 check for the seed-pack indexer.
 #
-# Runs scripts/seed_index.py against tests/fixtures/seed-pack into a FRESH temp brain.db
-# (via the BRAIN_DB override, so the live index is never touched), then asserts:
+# Runs scripts/seed_index.py against tests/fixtures/seed-pack into a FRESH temp hera.db
+# (via the HERA_DB override, so the live index is never touched), then asserts:
 #   - pages / pages_fts / pages_vec each == 4 after the first run
 #   - a SECOND run adds ZERO rows (idempotent on the baked ULID)
 #   - the seed rows are pinned=1
@@ -19,7 +19,7 @@ PACK="tests/fixtures/seed-pack"
 EXPECT=4
 
 TMPDIR_="$(mktemp -d)"
-export BRAIN_DB="$TMPDIR_/brain.db"
+export HERA_DB="$TMPDIR_/hera.db"
 
 # Snapshot pre-existing wiki concept/entity files so we can remove only ours.
 BEFORE="$(mktemp)"
@@ -43,15 +43,15 @@ trap cleanup EXIT
 # buggy run would otherwise mask the regression this test now guards against.
 rm -rf wiki/entitys 2>/dev/null || true
 
-echo "== e2e_seed_index: init fresh temp db ($BRAIN_DB) =="
-$PY scripts/brain_db.py --init >/dev/null
+echo "== e2e_seed_index: init fresh temp db ($HERA_DB) =="
+$PY scripts/hera_db.py --init >/dev/null
 
 count() {
   $PY - <<PY
 import os, sys, pathlib
 sys.path.insert(0, "scripts")
-import brain_db
-c = brain_db.connect(pathlib.Path(os.environ["BRAIN_DB"]))
+import hera_db
+c = hera_db.connect(pathlib.Path(os.environ["HERA_DB"]))
 print(c.execute("SELECT count(*) FROM $1").fetchone()[0])
 PY
 }

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""team_search.py — hybrid retrieval across the team brain + personal vault.
+"""team_search.py — hybrid retrieval across the team space + personal vault.
 
 Team pages are indexed in team.db (see team_index.py) with the SAME
-BM25 + dense-vector + RRF substrate as the personal brain.db. This engine
+BM25 + dense-vector + RRF substrate as the personal hera.db. This engine
 runs that hybrid search over team.db and — unless scoped to a specific
-teammate — also runs the local hybrid_search over brain.db, then merges the
+teammate — also runs the local hybrid_search over hera.db, then merges the
 two ranked lists by fused RRF score (both on the same scale) and tags each hit
 with its owner and source (team|personal).
 
@@ -26,11 +26,11 @@ import os
 import pathlib
 import sys
 
-_env_vault = os.environ.get("SECOND_BRAIN_VAULT")
+_env_vault = os.environ.get("HERA_VAULT")
 REPO = pathlib.Path(_env_vault).resolve() if _env_vault else pathlib.Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(REPO / "scripts"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 import search as _search  # noqa: E402
 import team_index  # noqa: E402
 
@@ -53,7 +53,7 @@ def search(query: str, owner: str | None = None, top: int = 10,
     # Personal side: only when not scoping to a specific teammate.
     if not owner:
         try:
-            conn = brain_db.connect()
+            conn = hera_db.connect()
             for h in _search.hybrid_search(conn, query, top_n=top, floor=floor):
                 hits.append({"page_id": h.page_id, "title": h.title,
                              "path": h.path, "owner": "me",

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# e2e_prune.sh — CP-8 check for /brain-prune.
+# e2e_prune.sh — CP-8 check for /hera-prune.
 #
 # Approach: seed a synthetic scoreboard (backdated ages + varying citation
 # totals across 10 concept pages, 1 old source, 1 young concept). Run prune.
@@ -30,8 +30,8 @@ seed_synth() {
   $PY - <<'PY'
 import sys, time, pathlib
 sys.path.insert(0, "scripts")
-import brain_db
-c = brain_db.connect()
+import hera_db
+c = hera_db.connect()
 
 pathlib.Path("wiki/prune_synth").mkdir(parents=True, exist_ok=True)
 
@@ -80,8 +80,8 @@ get_count() {
   local sql="$1"
   $PY - <<PY
 import sys; sys.path.insert(0,"scripts")
-import brain_db
-c = brain_db.connect()
+import hera_db
+c = hera_db.connect()
 print(c.execute("$sql").fetchone()[0])
 PY
 }
@@ -112,8 +112,8 @@ sys.exit(1 if young_in else 0)
     $PY scripts/prune.py apply --yes >/dev/null
     PID=$($PY - <<'PY'
 import sys; sys.path.insert(0,"scripts")
-import brain_db
-c = brain_db.connect()
+import hera_db
+c = hera_db.connect()
 r = c.execute("SELECT id FROM pages WHERE archived_at IS NOT NULL AND id LIKE '01PRUNECON%' LIMIT 1").fetchone()
 print(r[0] if r else "")
 PY
@@ -122,8 +122,8 @@ PY
     $PY scripts/prune.py restore "$PID" >/dev/null
     STATE=$($PY - <<PY
 import sys; sys.path.insert(0,"scripts")
-import brain_db
-c = brain_db.connect()
+import hera_db
+c = hera_db.connect()
 r = c.execute("SELECT archived_at, path FROM pages WHERE id = ?", ("$PID",)).fetchone()
 print((r[0] or "NULL"), r[1])
 PY
@@ -165,8 +165,8 @@ ARCH_COUNT=$(find wiki/.archive -name "01PRUNECON*.md" | wc -l | tr -d ' ')
 
 $PY - <<'PY'
 import sys; sys.path.insert(0,"scripts")
-import brain_db
-c = brain_db.connect()
+import hera_db
+c = hera_db.connect()
 n = c.execute("SELECT count(*) FROM pages WHERE archived_at IS NOT NULL AND id LIKE '01PRUNECON%'").fetchone()[0]
 assert n == 3, f"expected 3 archived, got {n}"
 gone = c.execute("SELECT count(*) FROM pages_vec WHERE page_id IN "

@@ -3,7 +3,7 @@
 # Verifies: reindex populates equal page/fts/vec/meta counts; a known staged
 # page's ULID is present; doctor passes.
 set -euo pipefail
-cd "${SECOND_BRAIN_VAULT:?SECOND_BRAIN_VAULT must be set}"
+cd "${HERA_VAULT:?HERA_VAULT must be set}"
 
 PY=.venv/bin/python
 

@@ -16,7 +16,7 @@ Tiers (from design):
 Dedup: a page cited N times in one turn scores at most once per tier per turn.
 Cursor: stored in session_cursors keyed on session_id.
 Failures: never raise (async hooks can't block anyway); every exception is
-written to ~/.brain/scorer.log — the SessionStart hook / --doctor surface
+written to ~/.hera/scorer.log — the SessionStart hook / --doctor surface
 fresh errors so weeks of silent scoreboard death cannot happen.
 """
 from __future__ import annotations
@@ -30,13 +30,13 @@ import time
 import traceback
 
 
-_env_vault = os.environ.get("SECOND_BRAIN_VAULT")
+_env_vault = os.environ.get("HERA_VAULT")
 REPO = pathlib.Path(_env_vault).resolve() if _env_vault else pathlib.Path(__file__).resolve().parents[2]
-SCORER_LOG = pathlib.Path(os.environ.get("BRAIN_SCORER_LOG", REPO / ".brain" / "scorer.log"))
+SCORER_LOG = pathlib.Path(os.environ.get("HERA_SCORER_LOG", REPO / ".hera" / "scorer.log"))
 TIER1_ENABLED = False  # see wiki/meta/r1-verdict.md
 
 # Citation regexes.
-# Tier 2 primary: `(Source: [[Title]])` — the canonical form from /brain-query.
+# Tier 2 primary: `(Source: [[Title]])` — the canonical form from /hera-query.
 SOURCE_RE = re.compile(r"\(Source:\s*\[\[([^\]]+)\]\]\)")
 # Tier 2 secondary: bare `[[Title]]` anywhere in the final message.
 WIKILINK_RE = re.compile(r"\[\[([^\]\|]+)(?:\|[^\]]+)?\]\]")
@@ -196,18 +196,18 @@ def _score(conn, session_id: str, transcript_path: pathlib.Path) -> dict:
     return {"cursor": new_cursor, "inserted": inserted}
 
 
-def _brain_off() -> bool:
-    v = os.environ.get("SECOND_BRAIN_OFF", "").strip().lower()
+def _hera_off() -> bool:
+    v = os.environ.get("HERA_OFF", "").strip().lower()
     return v not in ("", "0", "false", "no", "off")
 
 
 def main() -> int:
-    if _brain_off():
+    if _hera_off():
         return 0
     try:
         evt = _read_event()
-        transcript_path = evt.get("transcript_path") or os.environ.get("BRAIN_TRANSCRIPT")
-        session_id = evt.get("session_id") or os.environ.get("BRAIN_SESSION_ID") or "unknown"
+        transcript_path = evt.get("transcript_path") or os.environ.get("HERA_TRANSCRIPT")
+        session_id = evt.get("session_id") or os.environ.get("HERA_SESSION_ID") or "unknown"
         if not transcript_path:
             _log("no transcript_path in event; skipping")
             return 0
@@ -217,8 +217,8 @@ def main() -> int:
             return 0
 
         sys.path.insert(0, str(REPO / "scripts"))
-        import brain_db  # type: ignore
-        conn = brain_db.ensure_ready()
+        import hera_db  # type: ignore
+        conn = hera_db.ensure_ready()
         summary = _score(conn, session_id, tp)
         _log(f"scored session={session_id} cursor={summary['cursor']} "
              f"tier2={summary['inserted']['final']} tier1={summary['inserted']['thinking']}")

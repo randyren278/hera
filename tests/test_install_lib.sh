@@ -44,7 +44,7 @@ grep -q original "$scratch/settings.json"
 report "restore_latest_backup: restores content" $?
 
 # --- Test 3: restore with no backup -----------------------------------------
-rm -f "$scratch"/other.json.brain-backup.* 2>/dev/null
+rm -f "$scratch"/other.json.hera-backup.* 2>/dev/null
 echo "x" > "$scratch/other.json"
 restore_latest_backup "$scratch/other.json"
 [ $? -eq 1 ]
@@ -116,8 +116,8 @@ gmd="$mdscratch/global_claude.md"
 append_global_claudemd "$gmd" "$mdscratch/vault_claude.md"
 python3 -c "
 t = open('$gmd').read()
-assert t.count('>>> second-brain') == 1, 'not exactly one begin sentinel'
-assert t.count('<<< second-brain') == 1, 'not exactly one end sentinel'
+assert t.count('>>> Hera') == 1, 'not exactly one begin sentinel'
+assert t.count('<<< Hera') == 1, 'not exactly one end sentinel'
 assert 'line1' in t and 'line2' in t, 'vault body missing'
 "
 report "append_global_claudemd: creates one block from vault body" $?
@@ -128,7 +128,7 @@ append_global_claudemd "$gmd" "$mdscratch/vault_claude.md"
 python3 -c "
 t = open('$gmd').read()
 assert t.startswith('MY EXISTING RULES'), 'preexisting content not preserved at top'
-assert t.count('>>> second-brain') == 1, 'not one block'
+assert t.count('>>> Hera') == 1, 'not one block'
 "
 report "append_global_claudemd: preserves pre-existing content" $?
 
@@ -138,7 +138,7 @@ printf 'line1\nline2\nline3-new\n' > "$mdscratch/vault_claude.md"
 append_global_claudemd "$gmd" "$mdscratch/vault_claude.md"
 python3 -c "
 t = open('$gmd').read()
-assert t.count('>>> second-brain') == 1, f'expected 1 block, found {t.count(\">>> second-brain\")}'
+assert t.count('>>> Hera') == 1, f'expected 1 block, found {t.count(\">>> Hera\")}'
 assert 'line3-new' in t, 'block body not refreshed'
 assert t.startswith('MY EXISTING RULES'), 'preexisting content lost across re-runs'
 "
@@ -148,7 +148,7 @@ report "append_global_claudemd: idempotent + refreshes body" $?
 remove_global_claudemd_block "$gmd"
 python3 -c "
 t = open('$gmd').read()
-assert 'second-brain' not in t, 'block not removed'
+assert 'Hera' not in t, 'block not removed'
 assert t.strip() == 'MY EXISTING RULES', f'preexisting content not restored: {t!r}'
 "
 report "remove_global_claudemd_block: restores pre-existing content" $?

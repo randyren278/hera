@@ -7,10 +7,10 @@ documents the format so you can build your own.
 Loading a pack is always a deliberate act:
 
 ```
-python scripts/brain_cli.py seed_index <pack_dir>
+python scripts/hera_cli.py seed_index <pack_dir>
 ```
 
-It writes only to the personal `brain.db` — never `team.db`.
+It writes only to the personal `hera.db` — never `team.db`.
 
 ## Pack format
 
@@ -58,7 +58,7 @@ re-introduces duplicate index rows.
 
 ## What `tags: [seed]` and `pinned: true` buy you
 
-- **Exempt from `/brain-prune`.** Pinned pages never enter the candidate band.
+- **Exempt from `/hera-prune`.** Pinned pages never enter the candidate band.
 - **User content always wins.** A later note that contradicts a pinned page
   auto-resolves user-wins rather than freezing an open conflict, so a pack
   never blocks you with a conflict queue.

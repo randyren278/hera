@@ -8,12 +8,12 @@
 #   - --owner randy excludes personal even for a shared term
 set -u
 cd "$(dirname "$0")/.." || exit 3
-export SECOND_BRAIN_VAULT="$PWD"
+export HERA_VAULT="$PWD"
 PY="./.venv/bin/python"; [ -x "$PY" ] || PY="python3"
 
-CASEY="team-brain-staging/casey/concepts"
+CASEY="team-staging/casey/concepts"
 UNIQ="zzquantumfoo"
-cleanup() { rm -rf "team-brain-staging/casey"; }
+cleanup() { rm -rf "team-staging/casey"; }
 trap cleanup EXIT
 mkdir -p "$CASEY"
 cat > "$CASEY/Quantum Widget.md" <<EOF

@@ -1,12 +1,12 @@
 """preflight.py — OS-neutral environment checks (port of preflight.sh).
 
-Callable in-process from install.py (step 1) and brain_db.py --doctor, so
+Callable in-process from install.py (step 1) and hera_db.py --doctor, so
 neither needs ``bash``/``curl``/``grep``/the standalone ``sqlite3`` CLI. Each
 check uses the Python stdlib (``sqlite3``, ``urllib``) or an import probe.
 
 ``run_preflight(vault)`` returns 0 iff every check passes, else 1 — same
 semantics as the shell version. It runs against the *current* interpreter,
-which install.py/brain_db.py invoke via the vault's ``.venv`` python, so the
+which install.py/hera_db.py invoke via the vault's ``.venv`` python, so the
 library-import checks reflect the venv, not the system python.
 """
 from __future__ import annotations
@@ -140,7 +140,7 @@ def _emit_ollama_remedies(status: dict[str, bool]) -> None:
                 "or launch the app), or re-run install.py.")
     elif status.get("nomic-embed-text") is False:
         ui.warn("embedding model missing — pull it with: "
-                "ollama pull nomic-embed-text (install.py / brain-setup do this "
+                "ollama pull nomic-embed-text (install.py / hera-setup do this "
                 "automatically).")
 
 

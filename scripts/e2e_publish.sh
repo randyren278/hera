@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# e2e_publish.sh — CP-7 check for /brain-team add (publish flow).
+# e2e_publish.sh — CP-7 check for /hera-team add (publish flow).
 #
 # Modes:
 #   default          : stage the mixed_private fixture, assert:
@@ -18,11 +18,11 @@ cd "$REPO"
 PY=".venv/bin/python"
 FIXTURE="tests/fixtures/mixed_private.md"
 BLOCKLIST="tests/fixtures/private_terms.txt"
-STAGING="team-brain-staging"
+STAGING="team-staging"
 
-# publish.py resolves its staging dir from its own location ($REPO/team-brain-staging),
+# publish.py resolves its staging dir from its own location ($REPO/team-staging),
 # so this test provisions that clone here and wires it to a throwaway *local* bare
-# remote — no network, no configured SECOND_BRAIN_TEAM_REMOTE, no fixed remote. The
+# remote — no network, no configured HERA_TEAM_REMOTE, no fixed remote. The
 # bare remote lets the "nothing pushed" assertion (origin has exactly the initial
 # commit) hold. The clone + bare are removed on exit; the dir is gitignored anyway.
 BARE="$(mktemp -d)/team.git"

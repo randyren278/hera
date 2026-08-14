@@ -51,5 +51,5 @@ def test_every_event_maps_to_a_script():
 def test_has_posixisms_detector():
     assert hookcmd.has_posixisms('. "$HOME/x.env" && "y" "z"')
     assert hookcmd.has_posixisms('"a" && "b"')
-    assert hookcmd.has_posixisms('"$SECOND_BRAIN_VAULT/py" "hook"')
+    assert hookcmd.has_posixisms('"$HERA_VAULT/py" "hook"')
     assert not hookcmd.has_posixisms('"C:\\v\\py.exe" "C:\\v\\hook.py"')

@@ -1,8 +1,8 @@
-# Second Brain: documentation map
+# Hera: documentation map
 
 > Index. For everyone. Start here. There are two audiences and two doors: new users go to onboarding, maintainers go to the internals docs.
 
-Second Brain is a single-user note vault that runs inside Claude Code. It has a Markdown wiki (`wiki/`), a SQLite index (`brain.db`), Python engines (`scripts/`), and four hooks (`.claude/hooks/`) wired together. You drive it by talking to Claude; hooks act on your behalf between turns.
+Hera is a single-user note vault that runs inside Claude Code. It has a Markdown wiki (`wiki/`), a SQLite index (`hera.db`), Python engines (`scripts/`), and four hooks (`.claude/hooks/`) wired together. You drive it by talking to Claude; hooks act on your behalf between turns.
 
 This page routes; it does not host. Each doc below owns its facts, so follow the link rather than expecting a summary here.
 
@@ -22,10 +22,10 @@ This page routes; it does not host. Each doc below owns its facts, so follow the
 |---|---|
 | [ONBOARDING.md](ONBOARDING.md) | What the system is, how to drive it, first success, what the hooks do automatically |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the pieces fit; the invariants a refactor must not break; failure modes and `--doctor` |
-| [DATA-MODEL.md](DATA-MODEL.md) | The `brain.db` schema (10 tables, FKs, config keys, embedding format, locking) plus `team.db`, the separate team-brain index |
+| [DATA-MODEL.md](DATA-MODEL.md) | The `hera.db` schema (10 tables, FKs, config keys, embedding format, locking) plus `team.db`, the separate team space index |
 | [RETRIEVAL.md](RETRIEVAL.md) | Ranking + retrieval in one place: BM25 + dense + RRF, the floor, what data lives in which store, and how it flows local ↔ team |
 | [HOOKS.md](HOOKS.md) | The four Claude Code hooks: triggers, timeouts, inputs, side effects, fail-open posture |
-| [PIPELINES.md](PIPELINES.md) | The five core engines (ingest, hybrid search + RRF, conflicts, prune, publish) plus the team-brain layer (sync, index, hybrid retrieval, remove) |
+| [PIPELINES.md](PIPELINES.md) | The five core engines (ingest, hybrid search + RRF, conflicts, prune, publish) plus the team space layer (sync, index, hybrid retrieval, remove) |
 | [GLOBAL_INSTALL.md](GLOBAL_INSTALL.md) | Global-install topology: the locator env, symlinks, settings merge, uninstall |
 | [DECISIONS.md](DECISIONS.md) | The ADR index, one decision per record, with status |
 
@@ -64,5 +64,5 @@ flowchart TD
 - `wiki/meta/r1-verdict.md`: why Tier-1 (thinking-block) citation scoring is disabled.
 - `seed/README.md`: the **seed pack** format. No pack ships with Hera; the doc
   describes the layout so you can build your own and load it with
-  `python scripts/brain_cli.py seed_index <pack_dir>`. Its pages are pinned
-  (exempt from `/brain-prune`) and lose to later user notes on contradiction.
+  `python scripts/hera_cli.py seed_index <pack_dir>`. Its pages are pinned
+  (exempt from `/hera-prune`) and lose to later user notes on contradiction.

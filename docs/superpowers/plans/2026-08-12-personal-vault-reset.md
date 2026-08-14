@@ -14,12 +14,12 @@
 
 - **Never invoke `claude -p` with `--bare`.** `--bare` skips keychain reads; subscription OAuth auth then fails with `Not logged in`. This replaces the old NEVER-5 invariant, which mandated the opposite.
 - **Every nested `claude -p` call must pass all four isolation flags** — `--setting-sources ""`, `--strict-mcp-config`, `--tools ""`, `--disable-slash-commands` — and must set `cwd` to a directory outside the vault.
-- `BRAIN_CLAUDE_MODEL` defaults to **`sonnet`**. `claude-opus-latest` no longer resolves.
+- `HERA_CLAUDE_MODEL` defaults to **`sonnet`**. `claude-opus-latest` no longer resolves.
 - **All writes to `wiki/` go through `locks.lock()`.** Never bypass.
-- **Never let team content into personal `brain.db`** (ADR-14). `team_index.py` opens `TEAM_DB`; personal engines open `brain.db`.
+- **Never let team content into personal `hera.db`** (ADR-14). `team_index.py` opens `TEAM_DB`; personal engines open `hera.db`.
 - **Never delete from `wiki/.archive/` in engine code.** (The one-time wipe in Task 9 is an explicit, human-approved exception.)
 - **The team-brain subsystem is out of scope.** No files removed, no ADR-14 change. It stays for collaborating with friends.
-- Project name is **Hera**. `BRAIN_OWNER` stays `randy`. Do **not** rename `SECOND_BRAIN_VAULT`, `SECOND_BRAIN_OFF`, or `~/.claude/second-brain.env`.
+- Project name is **Hera**. `HERA_OWNER` stays `randy`. Do **not** rename `HERA_VAULT`, `HERA_OFF`, or `~/.claude/hera.env`.
 - Audit regex requires word boundaries: `\b(sap|fpa106|harca|qrc|i771473|wdf|successfactors)\b|magnum opus|s-4hana`. Without `\b`, `sap` matches `disappeared`.
 - Run Python via `.venv/bin/python` from the repo root. Commit after every task.
 
@@ -36,8 +36,8 @@
 - `scripts/publish.py` — re-exports `CLAUDE_MODEL`/`CLAUDE_ISOLATION`/`CLAUDE_CWD` from `ingest` (already imported at line 31), 1 call site.
 - `tests/test_claude_bin_resolve.py` — command-shape assertions.
 - `scripts/e2e_seed_index.sh`, `scripts/e2e_seed_guards.sh` — repointed at the fixture pack.
-- `scripts/seed_index.py`, `.claude/skills/brain-setup/SKILL.md`, `seed/README.md` — de-seeded.
-- `README.md`, `docs/README.md`, `docs/DECISIONS.md`, `docs/GLOBAL_INSTALL.md`, `docs/PIPELINES.md`, `docs/ARCHITECTURE.md`, `CLAUDE.md`, `.claude/skills/brain-ingest/SKILL.md`, `tests/test_hookcmd.py`, `.claude/settings.local.json`.
+- `scripts/seed_index.py`, `.claude/skills/hera-setup/SKILL.md`, `seed/README.md` — de-seeded.
+- `README.md`, `docs/README.md`, `docs/DECISIONS.md`, `docs/GLOBAL_INSTALL.md`, `docs/PIPELINES.md`, `docs/ARCHITECTURE.md`, `CLAUDE.md`, `.claude/skills/hera-ingest/SKILL.md`, `tests/test_hookcmd.py`, `.claude/settings.local.json`.
 
 **Deleted:**
 - `seed/fpa106/` (137 pages), `scripts/build_seed_pack.py`.
@@ -212,11 +212,11 @@ def test_model_defaults_to_sonnet(modules, monkeypatch):
 
 
 def test_model_honours_env_override(monkeypatch):
-    monkeypatch.setenv("BRAIN_CLAUDE_MODEL", "opus")
+    monkeypatch.setenv("HERA_CLAUDE_MODEL", "opus")
     import ingest
     ingest = importlib.reload(ingest)
     assert ingest.CLAUDE_MODEL == "opus"
-    monkeypatch.delenv("BRAIN_CLAUDE_MODEL")
+    monkeypatch.delenv("HERA_CLAUDE_MODEL")
     importlib.reload(ingest)
 
 
@@ -300,13 +300,13 @@ Expected: FAIL — `AttributeError: module 'ingest' has no attribute 'CLAUDE_ISO
 Replace line 57:
 
 ```python
-CLAUDE_MODEL = os.environ.get("BRAIN_CLAUDE_MODEL", "claude-opus-latest")
+CLAUDE_MODEL = os.environ.get("HERA_CLAUDE_MODEL", "claude-opus-latest")
 ```
 
 with:
 
 ```python
-CLAUDE_MODEL = os.environ.get("BRAIN_CLAUDE_MODEL", "sonnet")
+CLAUDE_MODEL = os.environ.get("HERA_CLAUDE_MODEL", "sonnet")
 
 # Isolation flags for nested `claude -p` calls. These REPLACE --bare.
 #
@@ -386,7 +386,7 @@ with:
 
 - [ ] **Step 6: Apply the same change to `scripts/publish.py` by importing, not duplicating**
 
-`publish.py:31` already reads `import ingest as _ingest`, so the constants are reachable — do **not** define a second copy. Delete line 39 (`CLAUDE_MODEL = os.environ.get("BRAIN_CLAUDE_MODEL", "claude-opus-latest")`) and replace it with re-exports so the module-level names `publish.CLAUDE_MODEL`, `publish.CLAUDE_ISOLATION`, and `publish.CLAUDE_CWD` still exist (the tests in Step 1 assert on them):
+`publish.py:31` already reads `import ingest as _ingest`, so the constants are reachable — do **not** define a second copy. Delete line 39 (`CLAUDE_MODEL = os.environ.get("HERA_CLAUDE_MODEL", "claude-opus-latest")`) and replace it with re-exports so the module-level names `publish.CLAUDE_MODEL`, `publish.CLAUDE_ISOLATION`, and `publish.CLAUDE_CWD` still exist (the tests in Step 1 assert on them):
 
 ```python
 # Nested-call configuration is defined once, in ingest. Re-exported here so
@@ -513,7 +513,7 @@ git commit -m "test: guard CLAUDE_BIN resolution against isolation-flag drift"
 The old invariant mandates the exact thing that broke the install. Every copy must change or a future reader will reintroduce the bug.
 
 **Files:**
-- Modify: `CLAUDE.md` (§"What NEVER to do" item 5), `docs/DECISIONS.md:23` + `:39`, `docs/PIPELINES.md:22,24,37,42,58,67,209,219,267`, `docs/ARCHITECTURE.md:170,188`, `.claude/skills/brain-ingest/SKILL.md:48`
+- Modify: `CLAUDE.md` (§"What NEVER to do" item 5), `docs/DECISIONS.md:23` + `:39`, `docs/PIPELINES.md:22,24,37,42,58,67,209,219,267`, `docs/ARCHITECTURE.md:170,188`, `.claude/skills/hera-ingest/SKILL.md:48`
 
 - [ ] **Step 1: Find every occurrence**
 
@@ -575,7 +575,7 @@ Line 22 — replace the `--bare` paragraph with:
 Line 24 — replace with:
 
 ```markdown
-Model and binary are env-overridable everywhere: `CLAUDE_BIN` (default `claude`), `BRAIN_CLAUDE_MODEL` (default `sonnet`).
+Model and binary are env-overridable everywhere: `CLAUDE_BIN` (default `claude`), `HERA_CLAUDE_MODEL` (default `sonnet`).
 ```
 
 Lines 37, 42, 209 are mermaid diagram node labels reading `&#40;--bare&#41;`. Change each to `&#40;isolated&#41;`.
@@ -585,7 +585,7 @@ Lines 58, 67, 219 are prose reading `runs \`claude -p --bare\``. Change each to 
 Line 267 — replace the config-table row with:
 
 ```markdown
-| Claude binary / model | env `CLAUDE_BIN` / `BRAIN_CLAUDE_MODEL` | defaults `claude` / `sonnet`; all nested calls use `CLAUDE_ISOLATION`, never `--bare` |
+| Claude binary / model | env `CLAUDE_BIN` / `HERA_CLAUDE_MODEL` | defaults `claude` / `sonnet`; all nested calls use `CLAUDE_ISOLATION`, never `--bare` |
 ```
 
 - [ ] **Step 5: Update `docs/ARCHITECTURE.md`**
@@ -602,7 +602,7 @@ Line 188 — change the invariant-table row to:
 | Never call `claude -p` without `CLAUDE_ISOLATION` (and never with `--bare`) | Nested calls inherit this vault's hooks and recurse; `--bare` skips keychain reads and breaks subscription auth | Every subprocess call in `ingest.py` / `publish.py` | CATASTROPHIC |
 ```
 
-Also update `.claude/skills/brain-ingest/SKILL.md:48`, changing ``a `claude -p` call with a strict JSON schema`` to ``an isolated `claude -p` call with a strict JSON schema``.
+Also update `.claude/skills/hera-ingest/SKILL.md:48`, changing ``a `claude -p` call with a strict JSON schema`` to ``an isolated `claude -p` call with a strict JSON schema``.
 
 - [ ] **Step 6: Verify no doc still mandates `--bare`**
 
@@ -626,7 +626,7 @@ Expected: all three exit 0. `check_docs_consistency.sh` asserts `team_index.py`,
 
 ```bash
 cd /Users/randyren/Desktop/hera
-git add CLAUDE.md docs/ .claude/skills/brain-ingest/SKILL.md
+git add CLAUDE.md docs/ .claude/skills/hera-ingest/SKILL.md
 git commit -m "docs: rewrite NEVER-5 -- isolation flags, not --bare
 
 The old invariant mandated --bare, which is the exact thing that broke
@@ -732,9 +732,9 @@ SQLite runs in-process with no separate server. It is the storage layer for [[An
 
 ```bash
 cd /Users/randyren/Desktop/hera
-TMPDB=$(mktemp -d)/brain.db
-BRAIN_DB="$TMPDB" .venv/bin/python scripts/brain_db.py --init >/dev/null
-BRAIN_DB="$TMPDB" .venv/bin/python scripts/seed_index.py tests/fixtures/seed-pack --json
+TMPDB=$(mktemp -d)/hera.db
+HERA_DB="$TMPDB" .venv/bin/python scripts/hera_db.py --init >/dev/null
+HERA_DB="$TMPDB" .venv/bin/python scripts/seed_index.py tests/fixtures/seed-pack --json
 ```
 
 Expected: `{"indexed": 4, "skipped": 0, "pinned": 4}`.
@@ -920,7 +920,7 @@ git commit -m "test: repoint seed e2e scripts at the neutral fixture pack"
 
 **Files:**
 - Delete: `seed/fpa106/` (137 pages), `scripts/build_seed_pack.py`
-- Modify: `seed/README.md`, `scripts/seed_index.py:3,191`, `.claude/skills/brain-setup/SKILL.md` (step 7)
+- Modify: `seed/README.md`, `scripts/seed_index.py:3,191`, `.claude/skills/hera-setup/SKILL.md` (step 7)
 
 **Interfaces:**
 - Consumes: Task 6's repointed e2e scripts. Do not run this before Task 6, or the e2e scripts break.
@@ -949,10 +949,10 @@ documents the format so you can build your own.
 Loading a pack is always a deliberate act:
 
 ```
-python scripts/brain_cli.py seed_index <pack_dir>
+python scripts/hera_cli.py seed_index <pack_dir>
 ```
 
-It writes only to the personal `brain.db` — never `team.db`.
+It writes only to the personal `hera.db` — never `team.db`.
 
 ## Pack format
 
@@ -989,7 +989,7 @@ re-introduces duplicate index rows.
 
 ## What `tags: [seed]` and `pinned: true` buy you
 
-- **Exempt from `/brain-prune`.** Pinned pages never enter the candidate band.
+- **Exempt from `/hera-prune`.** Pinned pages never enter the candidate band.
 - **User content always wins.** A later note that contradicts a pinned page
   auto-resolves user-wins rather than freezing an open conflict, so a pack
   never blocks you with a conflict queue.
@@ -1016,7 +1016,7 @@ Line 191 — change the argparse help:
                     help="seed pack directory (e.g. tests/fixtures/seed-pack)")
 ```
 
-- [ ] **Step 4: Remove step 7 from `.claude/skills/brain-setup/SKILL.md`**
+- [ ] **Step 4: Remove step 7 from `.claude/skills/hera-setup/SKILL.md`**
 
 Delete the entire numbered step 7 block (the `**Seed pack: fpa106 SAP knowledge (optional).**` heading through the line ending `rather than freezing a conflict.`), then renumber the following step 8 ("Global CLAUDE.md (optional)") to **7**, and renumber any steps after it accordingly.
 
@@ -1046,15 +1046,15 @@ Expected: all three exit 0.
 
 ```bash
 cd /Users/randyren/Desktop/hera
-git add -A seed scripts/seed_index.py .claude/skills/brain-setup/SKILL.md
+git add -A seed scripts/seed_index.py .claude/skills/hera-setup/SKILL.md
 git commit -m "feat: remove the SAP seed pack, keep the seed mechanism
 
 Deletes seed/fpa106 (137 SAP release-ops pages) and build_seed_pack.py,
-its corporate-source rewriter. seed_index.py, the brain_cli entry point,
+its corporate-source rewriter. seed_index.py, the hera_cli entry point,
 and the pack format survive so a personal pack can be built later.
 
-/brain-setup no longer prompts about seeding — it is now a deliberate
-brain_cli.py seed_index <pack> run."
+/hera-setup no longer prompts about seeding — it is now a deliberate
+hera_cli.py seed_index <pack> run."
 ```
 
 ---
@@ -1190,12 +1190,12 @@ Line 104 — the clone URL. **User decision: the git remote is being removed ent
 cd ~/hera
 
 # 2. Bootstrap the machine: venv, Ollama (install + start + model),
-#    brain.db, and the global hooks + skills. On a fresh machine this
+#    hera.db, and the global hooks + skills. On a fresh machine this
 #    prompts "install Ollama now? [Y/n]" — press Enter to accept.
 python install.py
 
 # 3. Launch Claude Code from ANY directory and finish scaffolding.
-#    Then, inside Claude Code, run: /brain-setup
+#    Then, inside Claude Code, run: /hera-setup
 claude
 ```
 
@@ -1220,8 +1220,8 @@ Replace the `seed/README.md` bullet with:
 ```markdown
 - `seed/README.md`: the **seed pack** format. No pack ships with Hera; the doc
   describes the layout so you can build your own and load it with
-  `python scripts/brain_cli.py seed_index <pack_dir>`. Its pages are pinned
-  (exempt from `/brain-prune`) and lose to later user notes on contradiction.
+  `python scripts/hera_cli.py seed_index <pack_dir>`. Its pages are pinned
+  (exempt from `/hera-prune`) and lose to later user notes on contradiction.
 ```
 
 - [ ] **Step 4: Fix `docs/DECISIONS.md` lines 117 and 119**
@@ -1229,7 +1229,7 @@ Replace the `seed/README.md` bullet with:
 Line 117 — change `it tracks the shared \`fpa106-team-brain\` remote, not \`second-brain\`` to:
 
 ```markdown
-it tracks whatever `SECOND_BRAIN_TEAM_REMOTE` points at, not this vault's own remote
+it tracks whatever `HERA_TEAM_REMOTE` points at, not this vault's own remote
 ```
 
 Line 119 — remove the corporate username from the orphan-folder example. Change `produced an **orphan folder** (\`I771473/.gitkeep\`) that no writer ever touched` to:
@@ -1309,7 +1309,7 @@ flagged four clean files."
 Last, so earlier tasks can still read the old DB if a question comes up.
 
 **Files:**
-- Delete: `brain.db*`, `team.db*`, `.brain/session-*.md`, `.brain/*.log`, `wiki/.raw/articles/session-*.md`, `wiki/.archive/*`
+- Delete: `hera.db*`, `team.db*`, `.hera/session-*.md`, `.hera/*.log`, `wiki/.raw/articles/session-*.md`, `wiki/.archive/*`
 - Modify: `wiki/hot.md`, `wiki/index.md`, `wiki/log.md`, `wiki/overview.md`
 
 All of these are gitignored (`.gitignore` lines 2, 8-14), so this produces almost no git churn.
@@ -1320,19 +1320,19 @@ All of these are gitignored (`.gitignore` lines 2, 8-14), so this produces almos
 cd /Users/randyren/Desktop/hera
 SCRATCH="/private/tmp/claude-501/-Users-randyren-Desktop-hera/23b766bb-6fa4-4707-801b-21fadd57ae02/scratchpad"
 mkdir -p "$SCRATCH/vault-backup"
-cp brain.db team.db "$SCRATCH/vault-backup/" 2>/dev/null
+cp hera.db team.db "$SCRATCH/vault-backup/" 2>/dev/null
 cp -r .brain "$SCRATCH/vault-backup/" 2>/dev/null
 ls -la "$SCRATCH/vault-backup/"
 ```
 
-Expected: `brain.db` (~3.3 MB), `team.db` (~151 KB), and a `.brain/` directory.
+Expected: `hera.db` (~3.3 MB), `team.db` (~151 KB), and a `.hera/` directory.
 
 - [ ] **Step 2: Delete the indexes and session artifacts**
 
 ```bash
 cd /Users/randyren/Desktop/hera
-rm -f brain.db brain.db-wal brain.db-shm team.db team.db-wal team.db-shm
-rm -f .brain/session-*.md .brain/scorer.log .brain/filing.log
+rm -f hera.db hera.db-wal hera.db-shm team.db team.db-wal team.db-shm
+rm -f .hera/session-*.md .hera/scorer.log .hera/filing.log
 rm -f wiki/.raw/articles/session-*.md
 rm -f wiki/.archive/*.md
 ```
@@ -1367,12 +1367,12 @@ _Ingest entries are prepended here, newest first._
 
 **Leave `wiki/overview.md` untouched.** It already reads "A general-purpose personal knowledge base for notes, articles, and ideas worth remembering and connecting over time" — no work-specific content. It is the anchor every extraction step uses to decide what is worth remembering, so changing it changes ingest behavior for no reason.
 
-- [ ] **Step 4: Regenerate an empty `brain.db`**
+- [ ] **Step 4: Regenerate an empty `hera.db`**
 
 ```bash
 cd /Users/randyren/Desktop/hera
-.venv/bin/python scripts/brain_db.py --init
-.venv/bin/python scripts/brain_db.py --doctor
+.venv/bin/python scripts/hera_db.py --init
+.venv/bin/python scripts/hera_db.py --doctor
 ```
 
 Expected: `--doctor` reports all checks passing.
@@ -1384,8 +1384,8 @@ cd /Users/randyren/Desktop/hera
 .venv/bin/python -c "
 import pathlib, sys
 sys.path.insert(0, 'scripts')
-import brain_db
-c = brain_db.connect(pathlib.Path('brain.db'))
+import hera_db
+c = hera_db.connect(pathlib.Path('hera.db'))
 for t in ('pages', 'pages_fts', 'pages_vec', 'citations', 'conflicts'):
     print(t, c.execute(f'select count(*) from {t}').fetchone()[0])
 "
@@ -1438,8 +1438,8 @@ ls wiki/sources/ wiki/concepts/
 .venv/bin/python -c "
 import pathlib, sys
 sys.path.insert(0, 'scripts')
-import brain_db
-c = brain_db.connect(pathlib.Path('brain.db'))
+import hera_db
+c = hera_db.connect(pathlib.Path('hera.db'))
 for t in ('pages', 'pages_fts', 'pages_vec'):
     print(t, c.execute(f'select count(*) from {t}').fetchone()[0])
 "
@@ -1458,7 +1458,7 @@ The smoke ingest wrote real pages into the vault. Either keep them (RRF is genui
 cd /Users/randyren/Desktop/hera
 # To remove: delete the created pages, then re-init.
 # rm -f wiki/sources/*.md wiki/concepts/*.md wiki/.raw/articles/hera-smoke.md
-# rm -f brain.db && .venv/bin/python scripts/brain_db.py --init
+# rm -f hera.db && .venv/bin/python scripts/hera_db.py --init
 rm -f /tmp/hera-smoke.md
 ```
 
@@ -1482,13 +1482,13 @@ cd /Users/randyren/Desktop/hera
 git add -A
 git commit -m "chore: reset vault to an empty personal state
 
-Wipes the work machine's brain.db, team.db, session files, and archived
+Wipes the work machine's hera.db, team.db, session files, and archived
 pages, and resets the meta pages to empty scaffolding. All wiped paths
 are gitignored. wiki/meta/r1-verdict.md is kept — it is a design record,
 not work content.
 
 Verified: full pytest suite green, all e2e scripts pass, and a live
-/brain-ingest completes end-to-end on the subscription."
+/hera-ingest completes end-to-end on the subscription."
 ```
 
 ---
@@ -1501,10 +1501,10 @@ Mapped to the spec's §6 success criteria:
 |---|---|---|
 | 1 | `pytest tests/ -q` → 0 failed, 0 errors | Task 10 Step 6 |
 | 2 | All `e2e_*.sh` and `check_*.sh` exit 0 | Task 10 Step 7 |
-| 3 | `brain_db.py --doctor` clean | Task 10 Step 4 |
-| 4 | Live `/brain-ingest` completes on the subscription | Task 10 Step 8 (also Task 2 Step 8, Task 6 Step 7) |
+| 3 | `hera_db.py --doctor` clean | Task 10 Step 4 |
+| 4 | Live `/hera-ingest` completes on the subscription | Task 10 Step 8 (also Task 2 Step 8, Task 6 Step 7) |
 | 5 | Corporate audit grep empty | Task 10 Step 10 (also Task 9 Step 8) |
-| 6 | `/brain-setup` never prompts about seed data | Task 7 Step 4 |
+| 6 | `/hera-setup` never prompts about seed data | Task 7 Step 4 |
 
 ## Out-of-Scope Findings Protocol
 

@@ -2,7 +2,7 @@
 
 Used by:
   - .claude/hooks/prompt_inject.py (per-turn context injection, ADR-04)
-  - /brain-query (all three modes)
+  - /hera-query (all three modes)
 
 Contract:
   hybrid_search(conn, query, top_n=3, floor=0.015) -> list[Hit]

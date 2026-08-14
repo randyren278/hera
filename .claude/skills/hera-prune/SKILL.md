@@ -1,25 +1,25 @@
 ---
-name: brain-prune
-description: Review pruning candidates and archive the middle-band pages of the vault's citation-point spectrum. Use when the user says "prune the vault", "clean up the wiki", "/brain-prune", or "show pruning candidates". Reversible — nothing is destroyed, only moved to wiki/.archive/.
+name: hera-prune
+description: Review pruning candidates and archive the middle-band pages of the vault's citation-point spectrum. Use when the user says "prune the vault", "clean up the wiki", "/hera-prune", or "show pruning candidates". Reversible — nothing is destroyed, only moved to wiki/.archive/.
 ---
 
-# brain-prune
+# hera-prune
 
 Manually triggered. Recommended monthly. Design §9.5 + ADR-07.
 
 > **Vault location.** This skill requires the vault root, written by
-> `install.py` into `~/.claude/second-brain.env` as `SECOND_BRAIN_VAULT`.
-> If unset, error: `SECOND_BRAIN_VAULT is not set — run python install.py from
+> `install.py` into `~/.claude/hera.env` as `HERA_VAULT`.
+> If unset, error: `HERA_VAULT is not set — run python install.py from
 > the vault directory first.`
 
 **Invocation convention (OS-neutral).** Every engine call uses the one launcher
-`scripts/brain_cli.py`, which self-locates the vault, resolves the venv
+`scripts/hera_cli.py`, which self-locates the vault, resolves the venv
 interpreter for the running OS, and re-execs the engine. Run it as:
 
-    python "<VAULT>/scripts/brain_cli.py" <engine> [args...]
+    python "<VAULT>/scripts/hera_cli.py" <engine> [args...]
 
-replacing `<VAULT>` with the absolute path from `SECOND_BRAIN_VAULT` (the one-line
-locator `~/.claude/second-brain.env`). Works identically on Windows and POSIX.
+replacing `<VAULT>` with the absolute path from `HERA_VAULT` (the one-line
+locator `~/.claude/hera.env`). Works identically on Windows and POSIX.
 
 ## What gets pruned
 
@@ -37,16 +37,16 @@ bottom (rarely-used-but-important).
 
 ## Flow
 
-1. `python "<VAULT>/scripts/brain_cli.py" prune candidates` — dry-run listing.
+1. `python "<VAULT>/scripts/hera_cli.py" prune candidates` — dry-run listing.
 2. Present the candidate list to the user for approval.
-3. On approval: `python "<VAULT>/scripts/brain_cli.py" prune apply --yes` — moves the
+3. On approval: `python "<VAULT>/scripts/hera_cli.py" prune apply --yes` — moves the
    files under `<VAULT>/wiki/.archive/`, stamps `pages.archived_at`,
    clears the FTS and vector rows, and appends an entry to `wiki/log.md`.
 4. On rejection: nothing changes.
 
 ## Restoring
 
-`python "<VAULT>/scripts/brain_cli.py" prune restore <page-id>`
+`python "<VAULT>/scripts/hera_cli.py" prune restore <page-id>`
 moves the file back to its original path, clears `archived_at`, and rebuilds
 the FTS + vector rows so the page is retrievable again.
 

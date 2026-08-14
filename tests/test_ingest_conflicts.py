@@ -5,7 +5,7 @@ non-deterministic edges stubbed (the extraction LLM, the contradiction
 detector, the explicit-statement check, and the Ollama embedder). Everything
 that matters for the two bugs under test — the per-page contradiction loop,
 _enqueue_conflict, conflicts.resolve_new, and the deferred _upsert_page batch —
-runs for real against a throwaway vault + brain.db.
+runs for real against a throwaway vault + hera.db.
 
 Two invariants are pinned, each guarding a real bug in scripts/ingest.py:
 
@@ -33,19 +33,19 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 import ingest  # noqa: E402
 import conflicts  # noqa: E402
 
 
 @pytest.fixture
 def vault(tmp_path, monkeypatch):
-    """Throwaway vault: fresh brain.db + wiki/ tree, every vault-touching
+    """Throwaway vault: fresh hera.db + wiki/ tree, every vault-touching
     global repointed at tmp_path, and the four non-deterministic edges stubbed
     (extractor, embedder) so ingest_source runs deterministically offline."""
-    db = tmp_path / "brain.db"
+    db = tmp_path / "hera.db"
     wiki = tmp_path / "wiki"
-    monkeypatch.setattr(brain_db, "DB_PATH", db)
+    monkeypatch.setattr(hera_db, "DB_PATH", db)
     monkeypatch.setattr(ingest, "REPO", tmp_path)
     monkeypatch.setattr(ingest, "WIKI", wiki)
     monkeypatch.setattr(conflicts, "REPO", tmp_path)
@@ -53,7 +53,7 @@ def vault(tmp_path, monkeypatch):
         (wiki / sub).mkdir(parents=True, exist_ok=True)
     # Deterministic 768-dim embedding — never touch Ollama.
     monkeypatch.setattr(ingest._embed, "embed", lambda text: [0.0] * 768)
-    conn = brain_db.ensure_ready(db)
+    conn = hera_db.ensure_ready(db)
     yield conn, tmp_path, monkeypatch
     conn.close()
 

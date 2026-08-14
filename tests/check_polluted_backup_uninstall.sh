@@ -2,9 +2,9 @@
 # check_polluted_backup_uninstall.sh — CP-2 check.
 #
 # Simulates a machine that re-installed BEFORE this fix (so its newest
-# settings.json.brain-backup.* already contains second-brain hooks), then runs
+# settings.json.hera-backup.* already contains Hera hooks), then runs
 # a single uninstall and asserts the resulting settings.json is free of
-# second-brain hooks while the user's own unrelated hook survives.
+# Hera hooks while the user's own unrelated hook survives.
 
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -32,9 +32,9 @@ HOME="$SCRATCH" bash install.sh > /dev/null 2>&1
 # (merged) settings.json to a backup with a later timestamp. This reproduces
 # the pre-fix state where re-install clobbered the newest backup.
 sleep 1
-POLLUTED="$SCRATCH/.claude/settings.json.brain-backup.$(date +%Y%m%d-%H%M%S)"
+POLLUTED="$SCRATCH/.claude/settings.json.hera-backup.$(date +%Y%m%d-%H%M%S)"
 cp -p "$SCRATCH/.claude/settings.json" "$POLLUTED"
-if ! grep -q "second-brain.env" "$POLLUTED"; then
+if ! grep -q "hera.env" "$POLLUTED"; then
   echo "SETUP FAIL: forged backup is not polluted"; exit 1
 fi
 
@@ -47,9 +47,9 @@ if [ ! -f "$S" ]; then
   exit 1
 fi
 
-if grep -q "second-brain.env" "$S"; then
-  echo "FAIL: second-brain hooks survived uninstall (polluted backup was restored uncleaned)"
-  grep -n "second-brain.env" "$S"
+if grep -q "hera.env" "$S"; then
+  echo "FAIL: Hera hooks survived uninstall (polluted backup was restored uncleaned)"
+  grep -n "hera.env" "$S"
   exit 1
 fi
 

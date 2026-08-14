@@ -6,7 +6,7 @@
 
 **In one paragraph:** the vault does five kinds of work — turn a source into pages (*ingest*), find relevant pages for a query (*hybrid search*), record disagreements between an old page and a new claim (*conflicts*), archive stale pages (*prune*), and redact-then-stage pages for a team repo (*publish*). Each is one Python file under `scripts/`. This doc walks each engine's logic in order; the hooks and skills that trigger them are thin wrappers documented elsewhere. Read a section when you need to change or debug that engine.
 
-The five core engines under `scripts/` are the vault's machinery. Every write to `wiki/`, every citation score, every conflict, and every archived page passes through one of them. The hooks and skills are thin dispatchers; these files hold the logic. (The team-brain layer — `publish.py` for the push side plus `team_sync.py`, `team_search.py`, `team_index.py`, and `team_remove.py` for the pull/index/remove side — is documented with the `/brain-team` skill. It never writes to your personal `wiki/` or `brain.db`; its only index is a **separate `team.db`** that `team_index.py` owns, so team content and personal content stay isolated. See [team retrieval](#6-team-brain-retrieval-scriptsteam_indexpy-scriptsteam_searchpy) below and [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team-brain-index).)
+The five core engines under `scripts/` are the vault's machinery. Every write to `wiki/`, every citation score, every conflict, and every archived page passes through one of them. The hooks and skills are thin dispatchers; these files hold the logic. (The team space layer — `publish.py` for the push side plus `team_sync.py`, `team_search.py`, `team_index.py`, and `team_remove.py` for the pull/index/remove side — is documented with the `/hera-team` skill. It never writes to your personal `wiki/` or `hera.db`; its only index is a **separate `team.db`** that `team_index.py` owns, so team content and personal content stay isolated. See [team retrieval](#6-team space-retrieval-scriptsteam_indexpy-scriptsteam_searchpy) below and [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team space-index).)
 
 | Engine | Source | Job |
 |---|---|---|
@@ -21,7 +21,7 @@ Two invariants hold across all five core engines and are load-bearing. Do not br
 - **All `wiki/` writes go through `locks.lock(...)`** (ingest, conflicts, and prune all import `locks`). See [DATA-MODEL.md § locking](DATA-MODEL.md#7-file-locking-protocol-and-pending-delta-overflow).
 - **All nested LLM calls are isolated.** 3 calls in `ingest.py`, 1 in `publish.py`, identical command shape `[CLAUDE_BIN, "-p", *CLAUDE_ISOLATION, "--output-format", "text", "--model", CLAUDE_MODEL]` run with `cwd=CLAUDE_CWD`. `CLAUDE_ISOLATION` is `--setting-sources ""` (load no settings files, so no hook from any source fires), `--strict-mcp-config`, `--tools ""`, and `--disable-slash-commands`. That is what prevents the vault's own Stop hook from firing recursively inside an engine. `--bare` is **not** used: it skips keychain reads, so subscription auth fails.
 
-Model and binary are env-overridable everywhere: `CLAUDE_BIN` (default `claude`), `BRAIN_CLAUDE_MODEL` (default `sonnet`).
+Model and binary are env-overridable everywhere: `CLAUDE_BIN` (default `claude`), `HERA_CLAUDE_MODEL` (default `sonnet`).
 
 ---
 
@@ -54,7 +54,7 @@ flowchart TD
 Step by step:
 
 1. **Read + preserve raw.** The source is resolved and read (missing file becomes `SystemExit`). The raw text is copied into `raw_dir` (default `wiki/.raw/articles/`) via `shutil.copy2`, unless the source already lives there.
-2. **Ensure DB.** If no connection was passed, `brain_db.ensure_ready()` opens one, which loads sqlite-vec and initializes the schema (see [DATA-MODEL.md](DATA-MODEL.md#4-connection-how-connect-loads-sqlite-vec)).
+2. **Ensure DB.** If no connection was passed, `hera_db.ensure_ready()` opens one, which loads sqlite-vec and initializes the schema (see [DATA-MODEL.md](DATA-MODEL.md#4-connection-how-connect-loads-sqlite-vec)).
 3. **LLM extraction.** `_call_claude_extract` runs `claude -p` (isolated) with the extraction prompt on stdin, `timeout=600`, over the first 200,000 characters of the raw text. It demands ONE JSON object: a `source` block plus 1 to 8 `concepts` and 0 to 8 `entities`, each with a TitleCase human title (these become filenames and wikilink targets) and a frontmatter-free markdown body. Stray code fences are stripped; on a JSON parse failure it attempts to recover the first `{...}` block.
 4. **Build PageWrites + assign ULIDs.** Each new page gets `id=str(ulid.new())` at construction: source, every concept, every entity. **The ULID is the page's permanent address; the filename is a slug of the title and may change.** Bodies are decorated with callouts: `> [!source]` for the source page (plus `## Key takeaways` / `## Summary`), `> [!info]` for concepts, `> [!info] ({kind})` for entities.
 5. **Write the source page** through `locks.lock(...)`, with source-specific frontmatter (`source_url`, `source_kind`, `ingested`, `raw_path`).
@@ -148,7 +148,7 @@ The four outcomes:
 **Session auto-resolve routes through the same primitive.** The ADR-11 auto-resolve logic lives in `ingest.py`, not here, but it calls `conflicts.resolve_new(conn, cid)`, so a session's explicit-statement contradiction gets the identical `## Superseded` treatment as a manual "keep new". There is one code path for "new claim wins," reached two ways.
 
 > [!note]
-> The `/brain-conflicts` skill documents the CLI as `conflicts.py new|old|both|dismiss <cid>`, while [CLAUDE.md](../CLAUDE.md) shows `conflicts.py resolve <id> new|old|both`. The subcommand form in the source is `new|old|both|dismiss`. This is a known doc drift; the source is authoritative.
+> The `/hera-conflicts` skill documents the CLI as `conflicts.py new|old|both|dismiss <cid>`, while [CLAUDE.md](../CLAUDE.md) shows `conflicts.py resolve <id> new|old|both`. The subcommand form in the source is `new|old|both|dismiss`. This is a known doc drift; the source is authoritative.
 
 ---
 
@@ -209,7 +209,7 @@ flowchart TD
   B --> C["per page: strip body &#40;isolated&#41;"]
   C --> D{"redactor output?"}
   D -->|SKIP| E["drop page"]
-  D -->|redacted body| F["stage under<br>team-brain-staging/&lt;owner&gt;/"]
+  D -->|redacted body| F["stage under<br>team-staging/&lt;owner&gt;/"]
   F --> G["render_diff &#40;git add -A + git diff --cached&#41;"]
   G --> H{"human reviews + says push?"}
   H -->|no| I["staging left as-is"]
@@ -218,7 +218,7 @@ flowchart TD
 
 **Strip (`_strip_body`).** Runs `claude -p` (isolated) (`timeout=600`) with a redactor prompt that REMOVES personal info, named private individuals, and subjective claims/opinions, and KEEPS facts, patterns, framework definitions, well-known public entities, and wikilinks. If the redactor returns the token `SKIP`, the page is dropped (`None`). Code fences are stripped from output.
 
-**Stage (`stage_private_ingest`).** First runs the real private ingest (`ingest.ingest_source`). Then for every produced page it reads the private body, strips frontmatter, strips the body, and writes to `team-brain-staging/<OWNER>/{sources|concepts|entities}/{slug}.md` with `visibility: public` frontmatter added. `OWNER` = env `BRAIN_OWNER` (default `randy`). Frozen pages (no file on disk because a contradiction froze them) are recorded as skipped `"frozen (contradiction pending)"`; `SKIP`-ped pages as `"redactor said SKIP"`. Returns `{staged[], skipped[], warnings[]}`.
+**Stage (`stage_private_ingest`).** First runs the real private ingest (`ingest.ingest_source`). Then for every produced page it reads the private body, strips frontmatter, strips the body, and writes to `team-staging/<OWNER>/{sources|concepts|entities}/{slug}.md` with `visibility: public` frontmatter added. `OWNER` = env `HERA_OWNER` (default `randy`). Frozen pages (no file on disk because a contradiction froze them) are recorded as skipped `"frozen (contradiction pending)"`; `SKIP`-ped pages as `"redactor said SKIP"`. Returns `{staged[], skipped[], warnings[]}`.
 
 **The human push-gate (ADR-08), never auto-push.** Staging is a separate git repo. `render_diff` does `git add -A` + `git diff --cached --no-color` and returns the diff string for human review; it stages nothing to the remote. `commit_and_push(commit_msg)` (`git add -A`, then `git commit`, then `git push`) is a **separate function invoked only by the `push` CLI subcommand**. There is no code path where `stage` or `diff` calls `commit_and_push`. Pushing requires an explicit `push` invocation by the operator.
 
@@ -227,13 +227,13 @@ flowchart TD
 
 ---
 
-## 6. Team-brain retrieval: `scripts/team_index.py` + `scripts/team_search.py`
+## 6. Team space retrieval: `scripts/team_index.py` + `scripts/team_search.py`
 
-Retrieval over the team brain uses the **same substrate as local recall** — BM25 (FTS5) + dense (`sqlite-vec`) fused with RRF — so a teammate's published page ranks against your query the same way your own pages do. The difference is *where* it's indexed: team pages live in a **separate `team.db`**, never in your personal `brain.db`.
+Retrieval over the team space uses the **same substrate as local recall** — BM25 (FTS5) + dense (`sqlite-vec`) fused with RRF — so a teammate's published page ranks against your query the same way your own pages do. The difference is *where* it's indexed: team pages live in a **separate `team.db`**, never in your personal `hera.db`.
 
 ```mermaid
 flowchart TD
-  A(["team-brain-staging/&lt;owner&gt;/*.md"]) -->|team_sync clone/pull| B["_reindex_after_sync"]
+  A(["team-staging/&lt;owner&gt;/*.md"]) -->|team_sync clone/pull| B["_reindex_after_sync"]
   B --> C["team_index.reindex&#40;changed_only&#41;"]
   C --> D[("team.db<br>pages + fts + vec + page_meta")]
   Q(["query"]) --> E["team_hybrid_search&#40;team.db&#41;"]
@@ -241,13 +241,13 @@ flowchart TD
   E -->|owner-tagged hits| F["fused with local hybrid_search"]
 ```
 
-**Index (`team_index.py`).** Opens `team.db` via `brain_db.connect(TEAM_DB)` — reusing the connection helper (so `sqlite-vec` and WAL load) but pointing it at a different file (`TEAM_DB = $BRAIN_TEAM_DB` or `<repo>/team.db`). It walks `team-brain-staging/<owner>/`, and for every page carrying a ULID `id:` upserts `pages`/`pages_fts`/`pages_vec` plus a team-only `page_meta(page_id, owner, source, rel_path, mtime)` row. `reindex(changed_only=True)` re-embeds only pages whose mtime moved and drops pages whose file disappeared. Embedding cost is paid **on sync**, not per query.
+**Index (`team_index.py`).** Opens `team.db` via `hera_db.connect(TEAM_DB)` — reusing the connection helper (so `sqlite-vec` and WAL load) but pointing it at a different file (`TEAM_DB = $HERA_TEAM_DB` or `<repo>/team.db`). It walks `team-staging/<owner>/`, and for every page carrying a ULID `id:` upserts `pages`/`pages_fts`/`pages_vec` plus a team-only `page_meta(page_id, owner, source, rel_path, mtime)` row. `reindex(changed_only=True)` re-embeds only pages whose mtime moved and drops pages whose file disappeared. Embedding cost is paid **on sync**, not per query.
 
 **Refresh on sync.** `team_sync.py` calls `_reindex_after_sync()` after a successful `clone`/`ff-pull`. A reindex failure (e.g. Ollama down) **never** fails the sync — it warns and moves on; `team_index` is imported lazily so sync still works without the index engine.
 
 **Search (`team_search.py`).** `search.team_hybrid_search(team_conn, query, owner=None)` runs the same `_rrf_fuse` BM25+dense fusion over `team.db`, joining `page_meta` to attach `owner`/`source`, and returns dicts (team hits carry `owner`, which the local `Hit` does not). `team_search.py` merges that with the local `hybrid_search` by fused RRF score (same scale) and tags each hit's owner. `--owner NAME` restricts to that teammate and excludes your personal vault. The per-turn hook (`prompt_inject.py`) does the same fusion and tags team pointers ` (team: <owner>)`; the team query sits in its own try/except so a missing `team.db` or a down embedder contributes nothing and never breaks injection (fail-open).
 
-**Isolation invariant.** `team_index.py` opens only `TEAM_DB`; no team page, ULID row, or citation ever enters your personal `brain.db`. That separation is what lets team retrieval surface *everyone's* published pages without polluting your local ranking. See [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team-brain-index) and [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-14).
+**Isolation invariant.** `team_index.py` opens only `TEAM_DB`; no team page, ULID row, or citation ever enters your personal `hera.db`. That separation is what lets team retrieval surface *everyone's* published pages without polluting your local ranking. See [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team space-index) and [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-14).
 
 ---
 
@@ -264,7 +264,7 @@ Do not restate these values inline elsewhere; link here. Config defaults are see
 | Prune band | `config.prune_pct_low` / `prune_pct_high` | defaults `40` / `70` |
 | Citation points (final) | `config.points_final` | default `5` |
 | Citation points (thinking) | `config.points_thinking` | default `1`; tier is disabled, see [HOOKS.md](HOOKS.md) |
-| Claude binary / model | env `CLAUDE_BIN` / `BRAIN_CLAUDE_MODEL` | defaults `claude` / `sonnet`; all nested calls use `CLAUDE_ISOLATION`, never `--bare` |
+| Claude binary / model | env `CLAUDE_BIN` / `HERA_CLAUDE_MODEL` | defaults `claude` / `sonnet`; all nested calls use `CLAUDE_ISOLATION`, never `--bare` |
 
 ---
 
@@ -274,4 +274,4 @@ Do not restate these values inline elsewhere; link here. Config defaults are see
 - [RETRIEVAL.md](RETRIEVAL.md): the orientation view of ranking, the two stores, and how local and team results fuse.
 - [HOOKS.md](HOOKS.md): the four hooks that invoke search and ingest, and where contested warnings are surfaced.
 - [CLAUDE.md](../CLAUDE.md): the session-time rules and the "What NEVER to do" invariants these engines enforce.
-- [DECISIONS.md](DECISIONS.md): the ADRs behind these engines (ADR-08 publish gate, ADR-09 freeze, ADR-11 session auto-resolve, ADR-14 team-brain isolation).
+- [DECISIONS.md](DECISIONS.md): the ADRs behind these engines (ADR-08 publish gate, ADR-09 freeze, ADR-11 session auto-resolve, ADR-14 team space isolation).

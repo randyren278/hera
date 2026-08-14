@@ -3,7 +3,7 @@
 Companion to preflight.py, which only *verifies* that ``nomic-embed-text`` is
 pulled and serves 768-dim embeddings. Verification alone left a fresh install
 failing: Ollama ships without models, so a clean machine has nothing to serve
-until someone runs ``ollama pull``. This module fulfills the ``brain-setup``
+until someone runs ``ollama pull``. This module fulfills the ``hera-setup``
 SKILL.md step-4 promise ("pull nomic-embed-text if missing") from the install
 path, *before* preflight verifies.
 

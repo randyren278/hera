@@ -1,5 +1,5 @@
 # Blocklist for CP-7 e2e_publish. Any of these strings appearing in a staged
-# team-brain-staging/<owner>/* file after redaction indicates the strip
+# team-staging/<owner>/* file after redaction indicates the strip
 # failed. Case-insensitive substring match — no regex.
 Wilhelmina Blackthorn
 oksana-privcorp

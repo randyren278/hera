@@ -12,10 +12,10 @@ import locator  # noqa: E402
 
 
 def test_no_export_prefix(tmp_path):
-    target = tmp_path / "second-brain.env"
+    target = tmp_path / "hera.env"
     locator.write_locator(REPO, target)
     text = target.read_text(encoding="utf-8")
-    assert "SECOND_BRAIN_VAULT=" in text
+    assert "HERA_VAULT=" in text
     # The core Windows requirement: no shell `export`, which cmd.exe can't run.
     for line in text.splitlines():
         assert not line.lstrip().startswith("export "), f"found export line: {line!r}"
@@ -25,7 +25,7 @@ def test_value_is_absolute_realpath(tmp_path):
     target = tmp_path / "loc.env"
     locator.write_locator(REPO, target)
     parsed = locator.parse_locator(target)
-    got = pathlib.Path(parsed["SECOND_BRAIN_VAULT"])
+    got = pathlib.Path(parsed["HERA_VAULT"])
     assert got.is_absolute()
     assert got == pathlib.Path(__import__("os").path.realpath(REPO))
 
@@ -33,21 +33,21 @@ def test_value_is_absolute_realpath(tmp_path):
 def test_preserves_other_lines(tmp_path):
     target = tmp_path / "loc.env"
     target.write_text(
-        "# Second Brain vault locator — written by install.py\n"
-        'export SECOND_BRAIN_VAULT="/old/stale/path"\n'
-        'SECOND_BRAIN_TEAM_REMOTE="git@example.com:team/brain.git"\n',
+        "# Hera vault locator — written by install.py\n"
+        'export HERA_VAULT="/old/stale/path"\n'
+        'HERA_TEAM_REMOTE="git@example.com:team/hera.git"\n',
         encoding="utf-8",
     )
     locator.write_locator(REPO, target)
     parsed = locator.parse_locator(target)
     # Our line rewritten to the new vault, no stale export duplicated.
-    assert parsed["SECOND_BRAIN_VAULT"] == str(pathlib.Path(__import__("os").path.realpath(REPO)))
+    assert parsed["HERA_VAULT"] == str(pathlib.Path(__import__("os").path.realpath(REPO)))
     # Non-managed line survives.
-    assert parsed["SECOND_BRAIN_TEAM_REMOTE"] == "git@example.com:team/brain.git"
+    assert parsed["HERA_TEAM_REMOTE"] == "git@example.com:team/hera.git"
     # And it appears exactly once.
     text = target.read_text(encoding="utf-8")
-    assert text.count("SECOND_BRAIN_VAULT=") == 1
-    assert text.count("SECOND_BRAIN_TEAM_REMOTE=") == 1
+    assert text.count("HERA_VAULT=") == 1
+    assert text.count("HERA_TEAM_REMOTE=") == 1
 
 
 def test_idempotent_rewrite(tmp_path):

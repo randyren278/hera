@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""team_sync.py — bring the shared team brain down to disk.
+"""team_sync.py — bring the shared team space down to disk.
 
-The team brain is a plain git repo of redacted Markdown, one folder per
+The team space is a plain git repo of redacted Markdown, one folder per
 owner. This helper is the *pull* side of the loop: it clones the
-user-configured remote into `team-brain-staging/` if absent, else
+user-configured remote into `team-staging/` if absent, else
 fast-forward-pulls.
 
 There is no fixed remote. The remote URL is per-machine, resolved from
-`SECOND_BRAIN_TEAM_REMOTE` (set in `~/.claude/second-brain.env` by
-`/brain-setup`). If it is unset, no team space is configured and every
+`HERA_TEAM_REMOTE` (set in `~/.claude/hera.env` by
+`/hera-setup`). If it is unset, no team space is configured and every
 team path is a clean no-op.
 
 It NEVER pushes. Publishing (push) stays a human-approved action in
-`publish.py` / `/brain-team add`. Retrieval only ever reads.
+`publish.py` / `/hera-team add`. Retrieval only ever reads.
 """
 from __future__ import annotations
 
@@ -21,11 +21,11 @@ import pathlib
 import subprocess
 import sys
 
-_env_vault = os.environ.get("SECOND_BRAIN_VAULT")
+_env_vault = os.environ.get("HERA_VAULT")
 REPO = pathlib.Path(_env_vault).resolve() if _env_vault else pathlib.Path(__file__).resolve().parents[1]
-STAGING = REPO / "team-brain-staging"
+STAGING = REPO / "team-staging"
 
-NO_TEAM_MSG = "No team space configured — run /brain-setup to add one."
+NO_TEAM_MSG = "No team space configured — run /hera-setup to add one."
 
 # OS/editor junk that must never be swept into a publish. The staging clone is
 # a SEPARATE git repo from the vault, so the vault's own .gitignore does not
@@ -33,7 +33,7 @@ NO_TEAM_MSG = "No team space configured — run /brain-setup to add one."
 # otherwise stage a stray .DS_Store. We ship this file into the clone so those
 # files are ignored at the source.
 _STAGING_GITIGNORE = """\
-# Managed by team_sync.py — keeps OS/editor junk out of the shared team brain.
+# Managed by team_sync.py — keeps OS/editor junk out of the shared team space.
 .DS_Store
 .idea/
 .vscode/
@@ -42,7 +42,7 @@ _STAGING_GITIGNORE = """\
 
 
 def _ensure_staging_gitignore() -> None:
-    """Write team-brain-staging/.gitignore if absent or out of date. Idempotent."""
+    """Write team-staging/.gitignore if absent or out of date. Idempotent."""
     gi = STAGING / ".gitignore"
     try:
         if gi.exists() and gi.read_text(encoding="utf-8") == _STAGING_GITIGNORE:
@@ -55,23 +55,23 @@ def _ensure_staging_gitignore() -> None:
 
 
 def _resolve_remote() -> str | None:
-    """Resolve the team-brain remote URL, or None if no team space is set.
+    """Resolve the team space remote URL, or None if no team space is set.
 
-    Precedence: process env `SECOND_BRAIN_TEAM_REMOTE`, else the same var
-    parsed out of `~/.claude/second-brain.env` (which the shell/install.sh
+    Precedence: process env `HERA_TEAM_REMOTE`, else the same var
+    parsed out of `~/.claude/hera.env` (which the shell/install.sh
     sources but a bare subprocess may not have inherited).
     """
-    val = os.environ.get("SECOND_BRAIN_TEAM_REMOTE")
+    val = os.environ.get("HERA_TEAM_REMOTE")
     if val and val.strip():
         return val.strip()
-    env_file = pathlib.Path.home() / ".claude" / "second-brain.env"
+    env_file = pathlib.Path.home() / ".claude" / "hera.env"
     if env_file.exists():
         for line in env_file.read_text().splitlines():
             line = line.strip()
-            if line.startswith("#") or "SECOND_BRAIN_TEAM_REMOTE" not in line:
+            if line.startswith("#") or "HERA_TEAM_REMOTE" not in line:
                 continue
-            # matches: export SECOND_BRAIN_TEAM_REMOTE="url"  |  SECOND_BRAIN_TEAM_REMOTE=url
-            _, _, rhs = line.partition("SECOND_BRAIN_TEAM_REMOTE")
+            # matches: export HERA_TEAM_REMOTE="url"  |  HERA_TEAM_REMOTE=url
+            _, _, rhs = line.partition("HERA_TEAM_REMOTE")
             rhs = rhs.lstrip("=").strip().strip('"').strip("'")
             if rhs:
                 return rhs
@@ -125,7 +125,7 @@ def _clone_or_pull_git() -> int:
                 return 0
             sys.stderr.write(r.stderr)
             return r.returncode
-        print("pulled team-brain-staging (ff-only)")
+        print("pulled team-staging (ff-only)")
         _ensure_staging_gitignore()
         return 0
 
@@ -142,7 +142,7 @@ def _clone_or_pull_git() -> int:
     sys.stderr.write(r.stderr)
     if r.returncode != 0:
         return r.returncode
-    print("cloned team-brain-staging")
+    print("cloned team-staging")
     _ensure_staging_gitignore()
     return 0
 
@@ -159,7 +159,7 @@ def _init_over_existing(remote: str) -> int:
             return r.returncode
     # Try to fetch + set an upstream if the remote has anything.
     _run(["git", "fetch", "origin"], cwd=STAGING)
-    print("initialized team-brain-staging over existing files (remote wired)")
+    print("initialized team-staging over existing files (remote wired)")
     return 0
 
 

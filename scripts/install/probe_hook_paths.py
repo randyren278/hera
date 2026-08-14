@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""probe_hook_paths.py — verify each hook resolves REPO to $SECOND_BRAIN_VAULT.
+"""probe_hook_paths.py — verify each hook resolves REPO to $HERA_VAULT.
 
 Imports each hook module, reads its module-level REPO attribute, and
-asserts it matches the current SECOND_BRAIN_VAULT env var (or the vault
+asserts it matches the current HERA_VAULT env var (or the vault
 implied by this script's own location if the env var is unset).
 
 Exit 0 on all-good; exit 1 on the first mismatch.
@@ -28,9 +28,9 @@ def load(hook_name: str, hook_path: pathlib.Path):
 
 
 def main() -> int:
-    # If invoked without $SECOND_BRAIN_VAULT, treat the repo containing this
+    # If invoked without $HERA_VAULT, treat the repo containing this
     # script as the expected vault — that's the project-local case.
-    env_vault = os.environ.get("SECOND_BRAIN_VAULT")
+    env_vault = os.environ.get("HERA_VAULT")
     self_repo = pathlib.Path(__file__).resolve().parents[2]  # scripts/install/../.. == repo
     expected = pathlib.Path(env_vault).resolve() if env_vault else self_repo
 

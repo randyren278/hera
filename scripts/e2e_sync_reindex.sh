@@ -3,10 +3,10 @@
 # WITHOUT any manual reindex call. Simulates the post-pull on-disk state, then
 # invokes the exact reindex hook that clone_or_pull() runs on a successful sync.
 set -euo pipefail
-cd "${SECOND_BRAIN_VAULT:?SECOND_BRAIN_VAULT must be set}"
+cd "${HERA_VAULT:?HERA_VAULT must be set}"
 
 PY=.venv/bin/python
-NEWDIR="team-brain-staging/naman/concepts"
+NEWDIR="team-staging/naman/concepts"
 NEWFILE="$NEWDIR/E2E Sync Probe Page.md"
 PROBE_ID="01KXSYNCPROBE0000000000TEST"
 

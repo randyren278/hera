@@ -1,7 +1,7 @@
 """conflicts.py — conflict-queue CLI and resolution primitives (design §7.4).
 
 Used by:
-  - .claude/skills/brain-conflicts/SKILL.md (interactive resolution)
+  - .claude/skills/hera-conflicts/SKILL.md (interactive resolution)
   - scripts/e2e_conflicts.sh (deterministic resolution in tests)
 
 Actions per open conflict:
@@ -25,7 +25,7 @@ import time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 import locks     # noqa: E402
 
 
@@ -146,7 +146,7 @@ def _cli() -> int:
         p.add_argument("cid", type=int)
     a = ap.parse_args()
 
-    conn = brain_db.connect()
+    conn = hera_db.connect()
     if a.cmd == "list":
         for c in list_open(conn):
             print(f"[{c['id']}] {c['page_title']}")

@@ -1,7 +1,7 @@
 """ingest.py — Single Source Ingest engine (design §9.1).
 
 Invoked by:
-  - .claude/skills/brain-ingest/SKILL.md (interactive slash command)
+  - .claude/skills/hera-ingest/SKILL.md (interactive slash command)
   - .claude/hooks/session_end_file.py (background filing, CP-6)
   - scripts/e2e_ingest.sh (CP-2 checkpoint)
 
@@ -48,14 +48,14 @@ import ulid
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 import embed as _embed  # noqa: E402
 import locks  # noqa: E402
 
 
 WIKI = REPO / "wiki"
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN") or shutil.which("claude") or "claude"
-CLAUDE_MODEL = os.environ.get("BRAIN_CLAUDE_MODEL", "sonnet")
+CLAUDE_MODEL = os.environ.get("HERA_CLAUDE_MODEL", "sonnet")
 
 # Isolation flags for nested `claude -p` calls. These REPLACE --bare.
 #
@@ -553,7 +553,7 @@ def ingest_source(source_path: str, source_kind: str = "file",
     src = pathlib.Path(source_path).resolve()
     raw = _read_text_or_die(src)
     if conn is None:
-        conn = brain_db.ensure_ready()
+        conn = hera_db.ensure_ready()
 
     # Preserve raw text
     raw_dir = raw_dir or (WIKI / ".raw" / "articles")
@@ -617,7 +617,7 @@ def ingest_source(source_path: str, source_kind: str = "file",
     # For each concept/entity: if a page already exists at the target path,
     # run a contradiction check against its current body. On verdict=contradiction,
     # freeze the target (do not write, do not upsert), enqueue a conflict row.
-    origin_cwd = os.environ.get("BRAIN_ORIGIN_CWD") or os.getcwd()
+    origin_cwd = os.environ.get("HERA_ORIGIN_CWD") or os.getcwd()
     # Normalize so the SessionStart conflict-scope query (which normalizes the
     # session cwd identically) matches on every OS — Windows case/separator drift
     # would otherwise make the `origin_cwd = ?` equality silently miss.

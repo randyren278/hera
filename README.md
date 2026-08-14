@@ -43,13 +43,13 @@ your team's private GitHub repo.
 
 ## What it does
 
-- **Ingest.** `/brain-ingest <path>` reads an article, transcript, or note,
+- **Ingest.** `/hera-ingest <path>` reads an article, transcript, or note,
   extracts atomic pages (concepts, entities, questions), assigns stable
   IDs, and files them under `wiki/`. Contradictions with existing pages are
   detected and surfaced as conflicts.
 - **Recall.** Every prompt you send triggers a hybrid search over the vault.
   Top-N relevant pages are injected as pointers before Claude sees your
-  question — and if a team brain is configured, matching team pages are fused
+  question — and if a team space is configured, matching team pages are fused
   in on the same scale, tagged with who published them. If a retrieved page is
   contested, the injection flags it.
 - **Score.** When Claude finishes a turn, every `[[wikilink]]` and
@@ -57,13 +57,13 @@ your team's private GitHub repo.
   Frequently-cited pages float; unused pages sink.
 - **File sessions.** When your session ends, the transcript is distilled
   and ingested as a new source, closing the loop.
-- **Resolve conflicts.** `/brain-conflicts` walks you through unresolved
+- **Resolve conflicts.** `/hera-conflicts` walks you through unresolved
   contradictions surfaced by ingest.
-- **Publish.** `/brain-team add` runs a private ingest, then strips
+- **Publish.** `/hera-team add` runs a private ingest, then strips
   each page into a public-safe form and stages it under
-  `team-brain-staging/<owner>/`. You review the diff and approve before
-  anything is pushed to the shared team-brain repo.
-- **Prune.** `/brain-prune` archives the middle band of your citation
+  `team-staging/<owner>/`. You review the diff and approve before
+  anything is pushed to the shared team space repo.
+- **Prune.** `/hera-prune` archives the middle band of your citation
   distribution (default 40th to 70th percentile, age at least 30 days). Top
   pages (working context) and bottom pages (rare but important) are preserved.
   Nothing is deleted. Everything goes to `wiki/.archive/` and stays
@@ -105,12 +105,12 @@ and pulls `nomic-embed-text` — all in the one command below.
 cd wherever/you/put/it   # e.g. ~/hera
 
 # 2. Bootstrap the machine: venv, Ollama (install + start + model),
-#    brain.db, and the global hooks + skills. On a fresh machine this
+#    hera.db, and the global hooks + skills. On a fresh machine this
 #    prompts "install Ollama now? [Y/n]" — press Enter to accept.
 python install.py
 
 # 3. Launch Claude Code from ANY directory and finish scaffolding.
-#    Then, inside Claude Code, run: /brain-setup
+#    Then, inside Claude Code, run: /hera-setup
 claude
 ```
 
@@ -121,26 +121,26 @@ to run yourself. With no flag, an interactive run asks (default yes) and a
 non-interactive run proceeds.
 
 
-The `python install.py` step turns the second brain into a **global**
-capability. It **copies** the `brain-*` skills into `~/.claude/skills/`
+The `python install.py` step turns the Hera into a **global**
+capability. It **copies** the `hera-*` skills into `~/.claude/skills/`
 (static markdown — a copy needs no admin/Developer-Mode on Windows and
 creates no symlink), registers the four hooks by writing **absolute,
 in-repo command strings** into your user-level `~/.claude/settings.json`
 (preserving anything already there, with a timestamped backup), and writes
-`~/.claude/second-brain.env` so the hooks and skills can locate the vault via
-`SECOND_BRAIN_VAULT`. **No symlinks are created** — the hook command strings
+`~/.claude/hera.env` so the hooks and skills can locate the vault via
+`HERA_VAULT`. **No symlinks are created** — the hook command strings
 point straight at the vault's `.claude/hooks/` scripts, so an edit to a hook
 takes effect immediately with no mirror to refresh.
 
 After that, launching `claude` from any directory injects vault context,
-ingests the session on exit, and lets you invoke `/brain-ingest`,
-`/brain-conflicts`, `/brain-prune`, and the rest from anywhere. The vault's own
+ingests the session on exit, and lets you invoke `/hera-ingest`,
+`/hera-conflicts`, `/hera-prune`, and the rest from anywhere. The vault's own
 project-local `.claude/settings.json` is renamed to `.disabled` to
 prevent double-firing when you happen to `cd` into the vault.
 
 `install.py` also **optionally** appends the vault's `CLAUDE.md` into your
-user-level `~/.claude/CLAUDE.md`, so the brain's behavioral rules (cite what
-you use, never auto-push to team-brain) stay active in *every* directory, not
+user-level `~/.claude/CLAUDE.md`, so Hera's behavioral rules (cite what
+you use, never auto-push to team space) stay active in *every* directory, not
 just the vault. The tracked `CLAUDE.md` is the consumer-facing version — no
 repo-role banner — so it's correct both at a clone's root and in your global
 config. It's off by default: an interactive
@@ -150,22 +150,22 @@ CLAUDE.md is preserved) and `--uninstall` removes it. See
 [GLOBAL_INSTALL.md](docs/GLOBAL_INSTALL.md) → "Optional: the global
 CLAUDE.md block".
 
-`brain-setup` then:
+`hera-setup` then:
 1. Verifies Ollama is running and pulls `nomic-embed-text` if missing
-2. Confirms the vault scaffold + `brain.db` are in place
+2. Confirms the vault scaffold + `hera.db` are in place
 3. Optionally sets up a team space — asks whether you want one, and if so
-   prompts for a team-brain git repo URL, verifies access (`git ls-remote`),
-   saves it to `~/.claude/second-brain.env` as `SECOND_BRAIN_TEAM_REMOTE`,
-   and clones it into `team-brain-staging/`. Decline and team features stay
+   prompts for a team space git repo URL, verifies access (`git ls-remote`),
+   saves it to `~/.claude/hera.env` as `HERA_TEAM_REMOTE`,
+   and clones it into `team-staging/`. Decline and team features stay
    dormant until you re-run setup.
 4. Asks you what the vault is for and writes it into `wiki/overview.md`
 
-**Health check anytime:** `python "<VAULT>/scripts/brain_cli.py" brain_db --doctor`
+**Health check anytime:** `python "<VAULT>/scripts/hera_cli.py" hera_db --doctor`
 
 ## Uninstall
 
 Run it from the repo you cloned into (the installer finds itself, so you don't
-need `SECOND_BRAIN_VAULT` set, and it won't be in a fresh shell).
+need `HERA_VAULT` set, and it won't be in a fresh shell).
 
 ```bash
 # 1. From the cloned repo, preview exactly what will be removed.
@@ -176,14 +176,14 @@ python install.py --uninstall --dry-run
 python install.py --uninstall
 ```
 
-It removes the copied `brain-*` skills it created (tracked in a manifest so it
+It removes the copied `hera-*` skills it created (tracked in a manifest so it
 only ever deletes its own), restores `~/.claude/settings.json` from the
 backup taken at install time (or strips just our hook entries if no backup
-existed), deletes `~/.claude/second-brain.env`, re-enables the vault's
-project-local `.claude/settings.json`, and strips the optional second-brain
+existed), deletes `~/.claude/hera.env`, re-enables the vault's
+project-local `.claude/settings.json`, and strips the optional Hera
 block from `~/.claude/CLAUDE.md` if it was added. It's safe by construction:
 the uninstaller reverses everything **by content** (never by `readlink`), and
-refuses to remove a skill dir it didn't create. Your `wiki/`, `brain.db`, and
+refuses to remove a skill dir it didn't create. Your `wiki/`, `hera.db`, and
 the repo itself are never touched.
 
 ## How it works globally
@@ -194,15 +194,15 @@ the repo itself are never touched.
   against the in-repo hook script (`.venv\Scripts\python.exe` on Windows,
   `.venv/bin/python` elsewhere). Because the hook runs from its real path,
   `pathlib.Path(__file__).resolve()` yields the vault root directly.
-  `SECOND_BRAIN_VAULT` overrides this if set, letting you point one machine at
-  a different vault by editing `~/.claude/second-brain.env`.
+  `HERA_VAULT` overrides this if set, letting you point one machine at
+  a different vault by editing `~/.claude/hera.env`.
 - **Skills** are **copied** into `~/.claude/skills/` (not symlinked). Every
-  engine command they name goes through `scripts/brain_cli.py`, which resolves
+  engine command they name goes through `scripts/hera_cli.py`, which resolves
   the per-OS venv interpreter and re-execs the engine — one invocation shape on
   every OS.
-- **Runtime state** (`brain.db`, `wiki/.pending/`, `.brain/`) still
+- **Runtime state** (`hera.db`, `wiki/.pending/`, `.hera/`) still
   lives inside the vault. You can rename or move the vault by editing
-  `~/.claude/second-brain.env`, and no other paths need to change.
+  `~/.claude/hera.env`, and no other paths need to change.
 - For deeper detail see [`docs/GLOBAL_INSTALL.md`](docs/GLOBAL_INSTALL.md).
 
 ---
@@ -223,11 +223,11 @@ Explicit commands you'll actually type:
 
 | Command | What it does |
 |---|---|
-| `/brain-setup` | One-shot install (run once per machine) |
-| `/brain-ingest <path>` | Ingest an article/transcript/notes file into the vault |
-| `/brain-conflicts` | Walk through unresolved contradictions |
-| `/brain-prune` | Archive the middle band; nothing destructive |
-| `/brain-team add\|remove\|retrieve <...>` | All team-brain ops: publish your pages up (`add` runs a full private ingest, then strips and stages the public copy), un-publish your own (owner-scoped, human-gated delete), or search the team brain + your vault |
+| `/hera-setup` | One-shot install (run once per machine) |
+| `/hera-ingest <path>` | Ingest an article/transcript/notes file into the vault |
+| `/hera-conflicts` | Walk through unresolved contradictions |
+| `/hera-prune` | Archive the middle band; nothing destructive |
+| `/hera-team add\|remove\|retrieve <...>` | All team space ops: publish your pages up (`add` runs a full private ingest, then strips and stages the public copy), un-publish your own (owner-scoped, human-gated delete), or search the team space + your vault |
 
 ---
 
@@ -249,7 +249,7 @@ wiki/                       ← your notes (Markdown, Obsidian-compatible)
   .archive/                 ← pruned pages (restorable)
 
 scripts/                    ← engine (Python)
-  brain_db.py               ← schema + connect() + --doctor
+  hera_db.py               ← schema + connect() + --doctor
   ingest.py                 ← extraction, contradiction detection, filing
   search.py                 ← hybrid BM25 + vector + RRF
   conflicts.py              ← four-outcome resolver
@@ -271,7 +271,7 @@ scripts/                    ← engine (Python)
     prompt_inject.py        ← hybrid-search injection
     stop_score.py           ← citation scorer (async, tier-2 only)
     session_end_file.py     ← transcript filing (async, fire-and-forget)
-  skills/                   ← the /brain-* slash commands
+  skills/                   ← the /hera-* slash commands
 
 tests/                      ← pytest units + fixtures
 docs/                       ← the documentation set (start at docs/README.md)
@@ -279,44 +279,44 @@ docs/                       ← the documentation set (start at docs/README.md)
 
 ---
 
-## Team brain
+## Team space
 
-The team brain is **optional and configurable**. During `/brain-setup` you're
-asked whether you want a team space; if you do, you supply a team-brain git
+The team space is **optional and configurable**. During `/hera-setup` you're
+asked whether you want a team space; if you do, you supply a team space git
 repo URL, setup verifies you can reach it, and stores it per-machine in
-`~/.claude/second-brain.env` as `SECOND_BRAIN_TEAM_REMOTE`. This vault is not
-tied to any fixed remote — decline at setup and the `/brain-team` commands
+`~/.claude/hera.env` as `HERA_TEAM_REMOTE`. This vault is not
+tied to any fixed remote — decline at setup and the `/hera-team` commands
 simply no-op until you configure one.
 
-`/brain-team add <path>` will:
+`/hera-team add <path>` will:
 1. Run the normal private ingest (all pages default to `visibility: private`)
 2. LLM-strip each page into a public-safe copy (no names, no subjective
    claims, no internal identifiers)
-3. Stage the stripped copies under `team-brain-staging/<owner>/`
+3. Stage the stripped copies under `team-staging/<owner>/`
 4. Show you the diff
 5. **Wait for you to say push.** Nothing is committed or pushed automatically.
 
-Pulling the shared brain back down is the other half of the loop:
-`/brain-team retrieve <query>` fast-forward-pulls the team repo, re-indexes
+Pulling the shared team space back down is the other half of the loop:
+`/hera-team retrieve <query>` fast-forward-pulls the team repo, re-indexes
 teammates' published pages into a separate `team.db`, and runs the **same hybrid
 search** (BM25 + dense vectors + RRF) you get locally — keyed by each page's
 publisher ULID (the page's permanent id) — over that index, fused with your personal vault and tagged with
 who published each hit. `--owner <name>` scopes a query to one teammate. Team
-pages live in `team.db`, never in your personal `brain.db`, so team retrieval
+pages live in `team.db`, never in your personal `hera.db`, so team retrieval
 surfaces everyone's pages without touching your own ranking; the pull never
 pushes. Every prompt you send also folds these owner-tagged team hits into the
 context injection, ranked against your local pages on the same scale.
 
 When a project ends and you want your context out of the shared space,
-`/brain-team remove` lists **your own** published pages (newest first, with the
+`/hera-team remove` lists **your own** published pages (newest first, with the
 date each was added), you pick which to pull back (by date, topic, or title,
 conversationally), and it stages a real `git rm`, shows you the diff, and waits
 for your explicit push. It is **owner-scoped**: it only ever touches
-`team-brain-staging/<you>/`, never a teammate's folder. Git history is the undo.
+`team-staging/<you>/`, never a teammate's folder. Git history is the undo.
 
 ## Configuration
 
-Runtime knobs live in the `config` table of `brain.db`. Sensible defaults are
+Runtime knobs live in the `config` table of `hera.db`. Sensible defaults are
 seeded on `--init`:
 
 | Key | Default | What it does |
@@ -328,13 +328,13 @@ seeded on `--init`:
 | `prune_pct_low` | `40` | Prune band lower percentile |
 | `prune_pct_high` | `70` | Prune band upper percentile |
 
-Change a value by opening a `brain_db.connect()` connection and writing to
+Change a value by opening a `hera_db.connect()` connection and writing to
 the `config` table (this is the only sanctioned path, since a raw `sqlite3`
 connection won't load `sqlite-vec`):
 
 ```bash
-"$SECOND_BRAIN_VAULT/.venv/bin/python" - <<'PY'
-from scripts.brain_db import connect
+"$HERA_VAULT/.venv/bin/python" - <<'PY'
+from scripts.hera_db import connect
 conn = connect()
 conn.execute("UPDATE config SET value = ? WHERE key = ?", ("5", "inject_top_n"))
 conn.commit()

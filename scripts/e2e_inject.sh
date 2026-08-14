@@ -2,7 +2,7 @@
 # e2e_inject.sh — CP-3 check for per-turn injection.
 #
 # Preconditions:
-#   - CP-2 has run (wiki/ populated, brain.db has pages/fts/vec rows).
+#   - CP-2 has run (wiki/ populated, hera.db has pages/fts/vec rows).
 # Behavior:
 #   default: prove topical prompts inject a pointer, off-topic prompts don't.
 #   --no-ollama: prove fail-open when Ollama is unreachable (env var trips it).
@@ -18,7 +18,7 @@ MODE="${1:-default}"
 if [ "$MODE" = "--no-ollama" ]; then
   echo "== e2e_inject: fail-open (--no-ollama) =="
   # Simulate Ollama down via env flag consumed by the hook.
-  OUT=$(printf '{"prompt":"tell me about retrieval-augmented generation"}' | BRAIN_INJECT_NO_OLLAMA=1 $HOOK; echo "__RC=$?__")
+  OUT=$(printf '{"prompt":"tell me about retrieval-augmented generation"}' | HERA_INJECT_NO_OLLAMA=1 $HOOK; echo "__RC=$?__")
   RC=$(echo "$OUT" | grep -oE '__RC=[0-9]+__' | tr -dc 0-9)
   BODY=$(echo "$OUT" | sed 's/__RC=[0-9]*__$//')
   echo "  exit: $RC"
@@ -30,8 +30,8 @@ if [ "$MODE" = "--no-ollama" ]; then
   exit 0
 fi
 
-# Precondition: brain.db and wiki/ populated. If not, run CP-2 first.
-if [ ! -s brain.db ] || [ ! -d wiki/concepts ]; then
+# Precondition: hera.db and wiki/ populated. If not, run CP-2 first.
+if [ ! -s hera.db ] || [ ! -d wiki/concepts ]; then
   echo "prereq: running e2e_ingest to populate vault"
   bash scripts/e2e_ingest.sh >/tmp/e2e_ingest_for_inject.log 2>&1 || {
     echo "FAIL: prerequisite ingest did not succeed"; cat /tmp/e2e_ingest_for_inject.log; exit 1;

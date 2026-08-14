@@ -8,7 +8,7 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts" / "install"))
 import registration  # noqa: E402
 
-SKILLS = ["brain-setup", "brain-ingest", "brain-conflicts", "brain-prune", "brain-team"]
+SKILLS = ["hera-setup", "hera-ingest", "hera-conflicts", "hera-prune", "hera-team"]
 
 
 def test_skills_registered_and_discoverable(vault_env):
@@ -35,22 +35,22 @@ def test_reinstall_is_idempotent(vault_env):
     r2 = vault_env["run"]()
     assert r2.returncode == 0, r2.stderr
     skills = vault_env["home"] / "skills"
-    assert (skills / "brain-setup" / "SKILL.md").is_file()
+    assert (skills / "hera-setup" / "SKILL.md").is_file()
 
 
 def test_refuses_to_clobber_foreign_dir(tmp_path):
     """A pre-existing non-managed skill dir is never overwritten."""
     vault = tmp_path / "vault"
-    (vault / ".claude" / "skills" / "brain-setup").mkdir(parents=True)
-    (vault / ".claude" / "skills" / "brain-setup" / "SKILL.md").write_text("x")
+    (vault / ".claude" / "skills" / "hera-setup").mkdir(parents=True)
+    (vault / ".claude" / "skills" / "hera-setup" / "SKILL.md").write_text("x")
     home = tmp_path / "home"
     skills = home / "skills"
-    foreign = skills / "brain-setup"
+    foreign = skills / "hera-setup"
     foreign.mkdir(parents=True)
     (foreign / "user-file.md").write_text("do not delete me")
 
     import pytest
     with pytest.raises(RuntimeError, match="non-managed"):
-        registration.register_skills(vault, skills, ["brain-setup"], home)
+        registration.register_skills(vault, skills, ["hera-setup"], home)
     # Foreign content untouched.
     assert (foreign / "user-file.md").read_text() == "do not delete me"

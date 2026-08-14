@@ -16,7 +16,7 @@ def test_skills_are_real_dirs_not_links(vault_env):
     r = vault_env["run"]()
     assert r.returncode == 0, r.stderr
     skills = vault_env["home"] / "skills"
-    for name in ("brain-setup", "brain-ingest", "brain-conflicts", "brain-prune", "brain-team"):
+    for name in ("hera-setup", "hera-ingest", "hera-conflicts", "hera-prune", "hera-team"):
         d = skills / name
         assert d.is_dir(), f"missing skill dir {d}"
         assert not d.is_symlink(), f"skill {name} is a symlink — should be a copy"

@@ -1,4 +1,4 @@
-"""settings.py — generate + merge/strip the Second Brain hook fragment.
+"""settings.py — generate + merge/strip the Hera hook fragment.
 
 Pure-Python port of lib.sh's settings helpers, plus install-time generation of
 the hook fragment (replacing the static settings_fragment.json). The fragment's
@@ -103,39 +103,39 @@ def strip_our_hooks(target: pathlib.Path, fragment: dict) -> str:
             else:
                 del hooks[ev]
     if not changed:
-        return "no second-brain hook entries to remove"
+        return "no Hera hook entries to remove"
     other_keys = [k for k in data.keys() if k != "hooks"]
     if not hooks and not other_keys:
         target.unlink()
-        return "removed settings.json (contained only second-brain hooks)"
+        return "removed settings.json (contained only Hera hooks)"
     _atomic_json(target, data)
-    return "stripped second-brain hook entries from settings.json"
+    return "stripped Hera hook entries from settings.json"
 
 
 # --- backup / restore ------------------------------------------------------
 
 def backup_file(src: pathlib.Path) -> pathlib.Path | None:
-    """Copy ``src`` to ``src.brain-backup.<timestamp>``. Returns the backup path,
+    """Copy ``src`` to ``src.hera-backup.<timestamp>``. Returns the backup path,
     or None if ``src`` doesn't exist."""
     src = pathlib.Path(src)
     if not src.exists():
         return None
     ts = time.strftime("%Y%m%d-%H%M%S")
-    dst = src.with_name(src.name + f".brain-backup.{ts}")
+    dst = src.with_name(src.name + f".hera-backup.{ts}")
     n = 0
     while dst.exists():
         n += 1
-        dst = src.with_name(src.name + f".brain-backup.{ts}.{n}")
+        dst = src.with_name(src.name + f".hera-backup.{ts}.{n}")
     dst.write_bytes(src.read_bytes())
     return dst
 
 
 def restore_latest_backup(target: pathlib.Path) -> bool:
-    """Restore the most-recent ``target.brain-backup.*`` to ``target``.
+    """Restore the most-recent ``target.hera-backup.*`` to ``target``.
     Returns False if no backup exists."""
     target = pathlib.Path(target)
     backups = sorted(
-        target.parent.glob(target.name + ".brain-backup.*"),
+        target.parent.glob(target.name + ".hera-backup.*"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )

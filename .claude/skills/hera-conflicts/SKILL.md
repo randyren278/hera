@@ -1,9 +1,9 @@
 ---
-name: brain-conflicts
-description: Review and resolve open knowledge conflicts in the vault. Use when the user says "show conflicts", "resolve conflicts", "/brain-conflicts", or the SessionStart hook surfaces open conflicts from the current project.
+name: hera-conflicts
+description: Review and resolve open knowledge conflicts in the vault. Use when the user says "show conflicts", "resolve conflicts", "/hera-conflicts", or the SessionStart hook surfaces open conflicts from the current project.
 ---
 
-# brain-conflicts
+# hera-conflicts
 
 Global queue review (design §7.3 channel 4). Lists every open conflict with:
 
@@ -15,18 +15,18 @@ Global queue review (design §7.3 channel 4). Lists every open conflict with:
 - age
 
 > **Vault location.** This skill requires the vault root, written by
-> `install.py` into `~/.claude/second-brain.env` as `SECOND_BRAIN_VAULT`.
-> If unset, error: `SECOND_BRAIN_VAULT is not set — run python install.py from
+> `install.py` into `~/.claude/hera.env` as `HERA_VAULT`.
+> If unset, error: `HERA_VAULT is not set — run python install.py from
 > the vault directory first.`
 
 **Invocation convention (OS-neutral).** Every engine call uses the one launcher
-`scripts/brain_cli.py`, which self-locates the vault, resolves the venv
+`scripts/hera_cli.py`, which self-locates the vault, resolves the venv
 interpreter for the running OS, and re-execs the engine. Run it as:
 
-    python "<VAULT>/scripts/brain_cli.py" <engine> [args...]
+    python "<VAULT>/scripts/hera_cli.py" <engine> [args...]
 
-replacing `<VAULT>` with the absolute path from `SECOND_BRAIN_VAULT` (the one-line
-locator `~/.claude/second-brain.env`). Works identically on Windows and POSIX.
+replacing `<VAULT>` with the absolute path from `HERA_VAULT` (the one-line
+locator `~/.claude/hera.env`). Works identically on Windows and POSIX.
 
 ## Actions per open conflict
 
@@ -44,9 +44,9 @@ locator `~/.claude/second-brain.env`). Works identically on Windows and POSIX.
 
 ## Flow
 
-1. Query `python "<VAULT>/scripts/brain_cli.py" conflicts list`.
+1. Query `python "<VAULT>/scripts/hera_cli.py" conflicts list`.
 2. Present each conflict compactly and ask the user which action to take.
-3. Invoke `python "<VAULT>/scripts/brain_cli.py" conflicts new|old|both|dismiss <cid>` per resolution.
+3. Invoke `python "<VAULT>/scripts/hera_cli.py" conflicts new|old|both|dismiss <cid>` per resolution.
 4. All page writes route through `scripts/locks.py`.
 
 ## When conflicts appear automatically

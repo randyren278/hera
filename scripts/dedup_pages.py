@@ -15,8 +15,8 @@ Policy:
     row, its pages_vec row, and finally the pages row.
   - Idempotent: a second apply() finds zero duplicates.
 
-All DB access goes through brain_db.connect() (loads sqlite-vec), per the vault
-invariant against hand-editing brain.db. Dry-run is the default; --apply mutates.
+All DB access goes through hera_db.connect() (loads sqlite-vec), per the vault
+invariant against hand-editing hera.db. Dry-run is the default; --apply mutates.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ import pathlib
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 
 
 def _duplicate_groups(conn):
@@ -86,7 +86,7 @@ def apply(conn) -> int:
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    conn = brain_db.connect()
+    conn = hera_db.connect()
     try:
         if "--apply" in argv:
             return apply(conn)

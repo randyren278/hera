@@ -2,7 +2,7 @@
 
 The command string is what Claude Code hands to the host shell for a hook.
 Because we drop the ``~/.claude/hooks`` symlink mirror (A3), hooks run
-**in-repo** and every hook script resolves its REPO from ``$SECOND_BRAIN_VAULT``
+**in-repo** and every hook script resolves its REPO from ``$HERA_VAULT``
 OR its own ``__file__`` — with the in-repo path, ``__file__`` is already correct,
 so the command needs no env sourcing at all.
 

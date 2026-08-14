@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # e2e_seed_guards.sh — CP-4 checks for the Phase-4 seed guards.
 #
-# Two subcommands, each on a FRESH temp brain.db (via BRAIN_DB override, so the
+# Two subcommands, each on a FRESH temp hera.db (via HERA_DB override, so the
 # live index is never touched). Both index tests/fixtures/seed-pack first so real pinned
 # seed pages exist, then assert the guard:
 #
@@ -30,7 +30,7 @@ if [ "$SUB" != "prune" ] && [ "$SUB" != "conflict" ]; then
 fi
 
 TMPDIR_="$(mktemp -d)"
-export BRAIN_DB="$TMPDIR_/brain.db"
+export HERA_DB="$TMPDIR_/hera.db"
 
 # Snapshot pre-existing wiki files so we can remove only ours. The conflict
 # subcommand also writes a source page (wiki/sources/) and a raw copy
@@ -59,8 +59,8 @@ for m in hot index log; do
   [ -f "wiki/$m.md" ] && cp -p "wiki/$m.md" "$TMPDIR_/meta.$m.md"
 done
 
-echo "== e2e_seed_guards[$SUB]: init fresh temp db ($BRAIN_DB) =="
-$PY scripts/brain_db.py --init >/dev/null
+echo "== e2e_seed_guards[$SUB]: init fresh temp db ($HERA_DB) =="
+$PY scripts/hera_db.py --init >/dev/null
 
 echo "== e2e_seed_guards[$SUB]: index seed pack =="
 $PY scripts/seed_index.py "$PACK" --json >/dev/null
@@ -71,8 +71,8 @@ if [ "$SUB" = "prune" ]; then
   $PY - <<'PY'
 import os, sys, pathlib
 sys.path.insert(0, "scripts")
-import brain_db, prune
-conn = brain_db.connect(pathlib.Path(os.environ["BRAIN_DB"]))
+import hera_db, prune
+conn = hera_db.connect(pathlib.Path(os.environ["HERA_DB"]))
 
 # Push every pinned page's created_at to a date far older than any min-age.
 conn.execute("UPDATE pages SET created_at='2000-01-01T00:00:00' WHERE pinned=1")
@@ -82,7 +82,7 @@ npinned = conn.execute("SELECT count(*) FROM pages WHERE pinned=1").fetchone()[0
 print(f"  aged {npinned} pinned seed pages to 2000-01-01")
 assert npinned > 0, "no pinned seed pages present — seed index did not pin"
 
-# Run the REAL candidate selection + banding used by /brain-prune.
+# Run the REAL candidate selection + banding used by /hera-prune.
 cs = prune.eligible(conn)
 low = int(prune._config(conn, "prune_pct_low", "40"))
 high = int(prune._config(conn, "prune_pct_high", "70"))
@@ -142,12 +142,12 @@ TXT
   $PY - "$TARGET_TITLE" "$NOTE" <<'PY'
 import os, sys, pathlib, json
 sys.path.insert(0, "scripts")
-import brain_db, ingest
+import hera_db, ingest
 
 target_title = sys.argv[1]
 note_path = sys.argv[2]
 
-conn = brain_db.connect(pathlib.Path(os.environ["BRAIN_DB"]))
+conn = hera_db.connect(pathlib.Path(os.environ["HERA_DB"]))
 
 # Confirm the seed page exists and is pinned before we contradict it.
 target_path = pathlib.Path("wiki/concepts") / f"{ingest._slugify(target_title)}.md"

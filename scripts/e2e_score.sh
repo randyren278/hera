@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # e2e_score.sh — CP-4 check for citation scoring.
 #
-# Preconditions: brain.db populated with pages (CP-2 ran).
+# Preconditions: hera.db populated with pages (CP-2 ran).
 # Behavior:
 #   default: reset citations + session_cursors, replay tier-2 fixture,
 #     assert exact tier-2 row count = 3, tier-1 rows = 0 (per R-1 verdict).
@@ -17,15 +17,15 @@ FIXTURE_T2="tests/fixtures/transcript_tier2.jsonl"
 
 MODE="${1:-default}"
 
-if [ ! -s brain.db ] || [ ! -s "$FIXTURE_T2" ]; then
-  echo "FAIL: prerequisites missing (brain.db and fixture must exist)"; exit 1
+if [ ! -s hera.db ] || [ ! -s "$FIXTURE_T2" ]; then
+  echo "FAIL: prerequisites missing (hera.db and fixture must exist)"; exit 1
 fi
 
 reset_scorer_state() {
   $PY - <<'PY'
 import sys, pathlib; sys.path.insert(0, "scripts")
-import brain_db
-c = brain_db.connect()
+import hera_db
+c = hera_db.connect()
 c.execute("DELETE FROM citations")
 c.execute("DELETE FROM session_cursors")
 c.commit()
@@ -43,8 +43,8 @@ count_citations() {
   local tier="$1"
   $PY - <<PY
 import sys, pathlib; sys.path.insert(0, "scripts")
-import brain_db
-c = brain_db.connect()
+import hera_db
+c = hera_db.connect()
 print(c.execute("SELECT count(*) FROM citations WHERE tier='$tier'").fetchone()[0])
 PY
 }
@@ -86,17 +86,17 @@ fi
 # Cursor must have advanced.
 CUR=$($PY - <<'PY'
 import sys, pathlib; sys.path.insert(0, "scripts")
-import brain_db
-c = brain_db.connect()
+import hera_db
+c = hera_db.connect()
 print(c.execute("SELECT cursor FROM session_cursors WHERE session_id='sess-t2'").fetchone()[0])
 PY
 )
 [ "$CUR" -ge 2 ] || { echo "FAIL: cursor did not advance (=$CUR)"; exit 1; }
 
 # Scorer log must exist and mention session_id.
-if [ ! -s .brain/scorer.log ]; then
+if [ ! -s .hera/scorer.log ]; then
   echo "FAIL: scorer.log not written"; exit 1
 fi
-grep -q "sess-t2" .brain/scorer.log || { echo "FAIL: scorer.log does not mention session"; exit 1; }
+grep -q "sess-t2" .hera/scorer.log || { echo "FAIL: scorer.log does not mention session"; exit 1; }
 
 echo "== e2e_score: OK =="

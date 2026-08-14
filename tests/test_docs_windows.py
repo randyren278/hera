@@ -37,9 +37,9 @@ def test_global_install_describes_copy_not_symlink_mirror():
 
 def test_global_install_no_bash_source_hook_surface():
     # The old hook command surface sourced the locator with `. "$HOME/…"`.
-    assert '. "$HOME/.claude/second-brain.env" &&' not in GLOBAL
+    assert '. "$HOME/.claude/hera.env" &&' not in GLOBAL
     # Locator is plain KEY=VALUE, not `export`.
-    assert "export SECOND_BRAIN_VAULT=" not in GLOBAL
+    assert "export HERA_VAULT=" not in GLOBAL
 
 
 def test_global_install_has_windows_notes():

@@ -1,10 +1,10 @@
 # Global install — architecture reference
 
-**Why this exists:** by default the vault's hooks and skills only work when Claude Code is running *inside* the vault directory. "Global install" is the one-time step that makes them work in **any** directory — so the brain keeps surfacing notes and scoring citations while you work in unrelated projects — without copying the vault around. The trick is that everything is wired with an absolute path back to the single canonical vault on disk. This doc explains how that wiring works, why it's shaped this way, and where to look when it misbehaves; read it when you're installing, uninstalling, or debugging a hook that won't fire from a foreign directory.
+**Why this exists:** by default the vault's hooks and skills only work when Claude Code is running *inside* the vault directory. "Global install" is the one-time step that makes them work in **any** directory — so Hera keeps surfacing notes and scoring citations while you work in unrelated projects — without copying the vault around. The trick is that everything is wired with an absolute path back to the single canonical vault on disk. This doc explains how that wiring works, why it's shaped this way, and where to look when it misbehaves; read it when you're installing, uninstalling, or debugging a hook that won't fire from a foreign directory.
 
 `install.py` at the vault root converts a fresh clone into a globally
-available second brain: hooks fire in every Claude Code session, the
-`brain-*` skills are invokable from any directory, and everything
+available Hera: hooks fire in every Claude Code session, the
+`hera-*` skills are invokable from any directory, and everything
 still points back at the one canonical vault on disk. It runs on Windows,
 macOS, and Linux — no symlinks, no bash.
 
@@ -13,9 +13,9 @@ where to look if something misbehaves.
 
 ## The four moving parts
 
-1. **`~/.claude/second-brain.env`** — a single-line, shell-neutral file:
+1. **`~/.claude/hera.env`** — a single-line, shell-neutral file:
    ```
-   SECOND_BRAIN_VAULT="/absolute/path/to/vault"
+   HERA_VAULT="/absolute/path/to/vault"
    ```
    Plain `KEY=VALUE` with **no** `export` prefix, written by
    `scripts/install/locator.py`. It is **read by Python**, not sourced by a
@@ -26,7 +26,7 @@ where to look if something misbehaves.
 2. **In-repo hooks (no `~/.claude/hooks/` mirror).** The hooks run straight
    from `<vault>/.claude/hooks/*.py`. All four resolve their `REPO` like this:
    ```python
-   _env_vault = os.environ.get("SECOND_BRAIN_VAULT")
+   _env_vault = os.environ.get("HERA_VAULT")
    REPO = pathlib.Path(_env_vault).resolve() if _env_vault else pathlib.Path(__file__).resolve().parents[2]
    ```
    The env-var path wins when present. The `__file__.resolve()` fallback works
@@ -34,14 +34,14 @@ where to look if something misbehaves.
    root. Editing hook source takes effect immediately; there is no mirror to
    refresh and no symlink to dangle.
 
-3. **`~/.claude/skills/brain-*`** — real **copies** of the vault's
-   `<vault>/.claude/skills/brain-*` directories (skills are static markdown; a
+3. **`~/.claude/skills/hera-*`** — real **copies** of the vault's
+   `<vault>/.claude/skills/hera-*` directories (skills are static markdown; a
    copy needs no admin/Developer-Mode on Windows and creates no symlink).
    `install.py` tracks the dirs it created in a manifest
-   (`~/.claude/.brain-manifest`) so uninstall removes exactly those and never a
+   (`~/.claude/.hera-manifest`) so uninstall removes exactly those and never a
    dir it didn't create. Each `SKILL.md` invokes engines through
-   `scripts/brain_cli.py`, which resolves the per-OS venv interpreter, so a user
-   in any CWD ends up talking to the same `.venv/` and the same `brain.db`.
+   `scripts/hera_cli.py`, which resolves the per-OS venv interpreter, so a user
+   in any CWD ends up talking to the same `.venv/` and the same `hera.db`.
 
 4. **Merged `~/.claude/settings.json`** — `install.py` **generates** the hook
    fragment for the running OS (`scripts/install/hookcmd.py`) and merges it via
@@ -64,7 +64,7 @@ where to look if something misbehaves.
 
 ## Backup + restore
 
-`install.py` writes `~/.claude/settings.json.brain-backup.<timestamp>`
+`install.py` writes `~/.claude/settings.json.hera-backup.<timestamp>`
 before the very first merge — see `backup_file()` in
 `scripts/install/settings.py`. `--uninstall` restores the newest backup by
 mtime and leaves everything else alone.
@@ -77,11 +77,11 @@ hook entries. If that empties the file, it's removed.
 
 **First, the source-vs-clone model this section rests on.** This repo (`hera`) is the *source/template* that others clone. A line like "this repo is the source, edit and push here" is true *here* but would be false in a clone — it would "invert," telling a consumer their read-only copy is the upstream. So that maintainer-only guidance lives in `MAINTAINERS.md`, which is git-ignored and never reaches a clone. What remains — the invariants and the "cite what you use" rule — is *consumer-facing* and correct everywhere, so the tracked `CLAUDE.md` already **is** the version safe to ship. With that in mind:
 
-The retrieval half of the brain (hooks: session-start context, prompt
+The retrieval half of Hera (hooks: session-start context, prompt
 injection, citation scoring, session filing) works in **any** directory
 once installed, because the hooks are wired with an absolute
-`$SECOND_BRAIN_VAULT` path. But the *behavioral* half — cite what you use
-as `(Source: [[Title]])`, never auto-push to team-brain, use the engines
+`$HERA_VAULT` path. But the *behavioral* half — cite what you use
+as `(Source: [[Title]])`, never auto-push to team space, use the engines
 not shell tricks — lives in the vault's `CLAUDE.md`, which Claude Code
 only loads when the session's project directory is the vault itself.
 
@@ -106,8 +106,8 @@ mirror file and nothing to strip at install time. It is:
   `--with-global-claudemd` to append without a prompt. With no flag and
   no TTY, the step is skipped and prints how to add it later.
 - **Append, never replace.** The content goes inside a marked block
-  (`# >>> second-brain (managed by install.py) >>>` …
-  `# <<< second-brain <<<`); any pre-existing global CLAUDE.md content is
+  (`# >>> Hera (managed by install.py) >>>` …
+  `# <<< Hera <<<`); any pre-existing global CLAUDE.md content is
   preserved byte-for-byte. `install.py` backs up the target first before
   writing.
 - **Idempotent.** Re-running replaces the block in place (refreshing the
@@ -164,7 +164,7 @@ On Windows:
 Three things worth knowing:
 
 - **No env sourcing.** There is no `. "$HOME/…"` prefix and no `$VAR` — the
-  hook resolves the vault from `SECOND_BRAIN_VAULT` (if Claude Code exports it)
+  hook resolves the vault from `HERA_VAULT` (if Claude Code exports it)
   or from its own in-repo `__file__`, which is already correct because the hook
   runs from its real path. cmd.exe can run the string verbatim.
 - **Vault venv, not system Python.** The interpreter is the vault's `.venv/`
@@ -178,35 +178,35 @@ Three things worth knowing:
 - **Developer Mode is not required.** The installer creates no symlinks — skills
   are copied and hooks run in-repo — so no elevation or Developer Mode is needed.
 - **Interpreter path.** The venv interpreter is `.venv\Scripts\python.exe`
-  (POSIX is `.venv/bin/python`); `install.py`, `brain_cli.py`, and the generated
+  (POSIX is `.venv/bin/python`); `install.py`, `hera_cli.py`, and the generated
   hook commands all resolve this per-OS automatically.
-- **Locator is read, not sourced.** `~/.claude/second-brain.env` is plain
+- **Locator is read, not sourced.** `~/.claude/hera.env` is plain
   `KEY=VALUE` (no `export`), parsed by Python — nothing shell-specific.
 
 ## Multi-machine, multi-vault
 
 - **One vault, many machines.** Just clone the vault and run
-  `python install.py` on each. Runtime state (`brain.db`, `.brain/`, `wiki/`)
+  `python install.py` on each. Runtime state (`hera.db`, `.hera/`, `wiki/`)
   is per-clone and not synced — that's a data-sync question, out of
   scope for the installer.
 - **Different vault at a different location.** Edit
-  `~/.claude/second-brain.env` to point elsewhere. All hooks and skills
+  `~/.claude/hera.env` to point elsewhere. All hooks and skills
   follow immediately. If you moved the clone, the generated hook command
   strings still carry the old absolute path — re-run
   `python install.py --uninstall && python <new-path>/install.py`.
 - **Multiple vaults simultaneously.** Not supported. One
-  `SECOND_BRAIN_VAULT` per user. If you need this, either use two OS
+  `HERA_VAULT` per user. If you need this, either use two OS
   users or run the second Claude Code instance with a per-invocation
-  `SECOND_BRAIN_VAULT=<other>` override.
+  `HERA_VAULT=<other>` override.
 
 ## Failure modes and where to look
 
 | Symptom | Likely cause | Where to look |
 |---|---|---|
 | Hooks don't fire in a foreign CWD | `~/.claude/settings.json` merge lost or absent | `python -c "import json; print(json.load(open('$HOME/.claude/settings.json'))['hooks'].keys())"` |
-| `SECOND_BRAIN_VAULT` env var empty in a hook | locator missing or malformed | `type %USERPROFILE%\.claude\second-brain.env` (Windows) / `cat ~/.claude/second-brain.env` (POSIX) |
-| Hook fires but resolves to the wrong vault | locator env var points elsewhere, or the generated command carries a stale absolute path after a move | edit `~/.claude/second-brain.env`, or re-run `python install.py` from the current location |
-| Skill errors with "vault not set" | locator absent and the skill couldn't self-locate | re-run `python install.py`; confirm `~/.claude/second-brain.env` exists |
+| `HERA_VAULT` env var empty in a hook | locator missing or malformed | `type %USERPROFILE%\.claude\hera.env` (Windows) / `cat ~/.claude/hera.env` (POSIX) |
+| Hook fires but resolves to the wrong vault | locator env var points elsewhere, or the generated command carries a stale absolute path after a move | edit `~/.claude/hera.env`, or re-run `python install.py` from the current location |
+| Skill errors with "vault not set" | locator absent and the skill couldn't self-locate | re-run `python install.py`; confirm `~/.claude/hera.env` exists |
 | Hook command points at an old path | vault was moved after install | re-run `python install.py --uninstall` then `python install.py` from the new location |
 | Both project-local and global hooks firing | `<vault>/.claude/settings.json` wasn't disabled | check for `.disabled` sibling; if missing, rename it manually |
 
@@ -216,12 +216,12 @@ Three things worth knowing:
 <vault>/install.py                       # bootstrap + uninstall (cross-platform)
 <vault>/install.sh                       # thin POSIX shim → install.py
 <vault>/scripts/install/venv.py          # per-OS venv resolve + bootstrap
-<vault>/scripts/install/locator.py       # writes ~/.claude/second-brain.env
+<vault>/scripts/install/locator.py       # writes ~/.claude/hera.env
 <vault>/scripts/install/hookcmd.py       # per-OS hook command generation
 <vault>/scripts/install/settings.py      # backup/restore/merge/strip helpers
 <vault>/scripts/install/registration.py  # copy skills + manifest-based uninstall
 <vault>/scripts/install/preflight.py     # OS-neutral env checks (doctor + install)
-<vault>/scripts/brain_cli.py             # OS-neutral engine launcher (skills use it)
+<vault>/scripts/hera_cli.py             # OS-neutral engine launcher (skills use it)
 <vault>/scripts/install/check_skill_invocations.sh  # skill-portability verifier
 <vault>/tests/test_locator_py.py         # CP-1 locator tests
 <vault>/tests/test_venv_resolve.py       # CP-1 venv-resolve tests

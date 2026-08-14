@@ -19,18 +19,18 @@ import sys
 import time
 
 
-_env_vault = os.environ.get("SECOND_BRAIN_VAULT")
+_env_vault = os.environ.get("HERA_VAULT")
 REPO = pathlib.Path(_env_vault).resolve() if _env_vault else pathlib.Path(__file__).resolve().parents[2]
 WIKI = REPO / "wiki"
 
 
-def _brain_off() -> bool:
-    v = os.environ.get("SECOND_BRAIN_OFF", "").strip().lower()
+def _hera_off() -> bool:
+    v = os.environ.get("HERA_OFF", "").strip().lower()
     return v not in ("", "0", "false", "no", "off")
 
 
 def main() -> int:
-    if _brain_off():
+    if _hera_off():
         return 0
     try:
         raw = sys.stdin.read()
@@ -58,8 +58,8 @@ def main() -> int:
         #    instruction (channel 2); others get a quiet count (elsewhere).
         try:
             sys.path.insert(0, str(REPO / "scripts"))
-            import brain_db  # type: ignore
-            conn = brain_db.connect()
+            import hera_db  # type: ignore
+            conn = hera_db.connect()
             scoped = conn.execute(
                 "SELECT c.id, c.claim_old, c.claim_new, p.title "
                 "FROM conflicts c JOIN pages p ON p.id = c.page_id "
@@ -72,7 +72,7 @@ def main() -> int:
                     pieces.append(f"- [[{title}]] (conflict #{cid})")
                     pieces.append(f"  - existing: {co}")
                     pieces.append(f"  - new:      {cn}")
-                pieces.append("Ask the user how to resolve, then update via /brain-conflicts.")
+                pieces.append("Ask the user how to resolve, then update via /hera-conflicts.")
 
             n_elsewhere = conn.execute(
                 "SELECT count(*) FROM conflicts "
@@ -80,7 +80,7 @@ def main() -> int:
                 (cwd,),
             ).fetchone()[0]
             if n_elsewhere:
-                pieces.append(f"\n{n_elsewhere} open conflicts elsewhere — /brain-conflicts to review.")
+                pieces.append(f"\n{n_elsewhere} open conflicts elsewhere — /hera-conflicts to review.")
 
             # 3) stale pending deltas
             cutoff = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 86400))

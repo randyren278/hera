@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test_team_remove.sh — prove team_remove is owner-scoped and never pushes.
 #
-# Builds a throwaway vault in a temp dir with its own team-brain-staging git
+# Builds a throwaway vault in a temp dir with its own team-staging git
 # repo (NO remote — so any accidental push would fail loudly, and we never
 # touch the real clone). Two owners: randy (the caller) and casey (foreign).
 #
@@ -20,10 +20,10 @@ TMP="$(mktemp -d)"
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
 
-export SECOND_BRAIN_VAULT="$TMP"
-export BRAIN_OWNER="randy"
+export HERA_VAULT="$TMP"
+export HERA_OWNER="randy"
 
-STAGING="$TMP/team-brain-staging"
+STAGING="$TMP/team-staging"
 mkdir -p "$STAGING/randy/concepts" "$STAGING/casey/concepts"
 
 page() {  # page <path> <owner> <title>
@@ -67,7 +67,7 @@ print("ok1")
 ' || fail "list not owner-scoped"
 
 # ok2 — removing a casey/ path is refused, and stages nothing.
-CASEY_PATH="team-brain-staging/casey/concepts/Casey Note.md"
+CASEY_PATH="team-staging/casey/concepts/Casey Note.md"
 if "$PY" "$SRC_REPO/scripts/team_remove.py" stage-remove "$CASEY_PATH" >/dev/null 2>&1; then
   fail "foreign-owner stage-remove should have exited non-zero (refused)"
 fi
@@ -80,7 +80,7 @@ fi
 echo "ok2"
 
 # ok3 — removing a randy/ path stages a deletion but does NOT push.
-RANDY_PATH="team-brain-staging/randy/concepts/Randy Note.md"
+RANDY_PATH="team-staging/randy/concepts/Randy Note.md"
 "$PY" "$SRC_REPO/scripts/team_remove.py" stage-remove "$RANDY_PATH" >/dev/null 2>&1 \
   || fail "in-scope stage-remove should succeed"
 # staged as a deletion (porcelain shows 'D' in the index column)

@@ -16,10 +16,10 @@ def test_install_produces_all_artifacts(vault_env):
     assert r.returncode == 0, f"install failed:\n{r.stdout}\n{r.stderr}"
 
     # 1) locator written, plain KEY=VALUE, no export.
-    locator = home / "second-brain.env"
+    locator = home / "hera.env"
     assert locator.exists()
     text = locator.read_text()
-    assert "SECOND_BRAIN_VAULT=" in text
+    assert "HERA_VAULT=" in text
     assert not any(l.lstrip().startswith("export ") for l in text.splitlines())
 
     # 2) settings.json has all four hook events, each an in-repo command.
@@ -27,13 +27,13 @@ def test_install_produces_all_artifacts(vault_env):
     hooks = json.loads(settings.read_text())["hooks"]
     for ev in ("SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"):
         cmd = hooks[ev][0]["hooks"][0]["command"]
-        assert "brain_cli.py" not in cmd  # hooks call the script directly
+        assert "hera_cli.py" not in cmd  # hooks call the script directly
         assert ".claude/hooks/" in cmd or r".claude\hooks" in cmd
         assert "&&" not in cmd and "$" not in cmd  # cmd.exe-safe
 
     # 3) skills copied (real dirs), no symlink anywhere.
     skills = home / "skills"
-    for name in ("brain-setup", "brain-ingest", "brain-conflicts", "brain-prune", "brain-team"):
+    for name in ("hera-setup", "hera-ingest", "hera-conflicts", "hera-prune", "hera-team"):
         assert (skills / name / "SKILL.md").is_file()
         assert not (skills / name).is_symlink()
     assert not any(p.is_symlink() for p in home.rglob("*"))
@@ -55,6 +55,6 @@ def test_dry_run_changes_nothing(vault_env):
     r = run("--dry-run")
     assert r.returncode == 0, r.stderr
     # Dry run must not create the home artifacts.
-    assert not (home / "second-brain.env").exists()
+    assert not (home / "hera.env").exists()
     assert not (home / "settings.json").exists()
     assert not (home / "skills").exists()

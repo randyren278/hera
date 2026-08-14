@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # e2e_ingest.sh — CP-2 end-to-end check for the ingest pipeline.
 #
-# Wipes wiki/ and brain.db, runs one ingest against
+# Wipes wiki/ and hera.db, runs one ingest against
 # tests/fixtures/sample_article.md, then asserts every invariant the
 # checkpoint depends on. Property-based (not exact-string) because the
 # LLM extraction is nondeterministic — we check that pages exist, have
@@ -15,8 +15,8 @@ PY=".venv/bin/python"
 FIXTURE="tests/fixtures/sample_article.md"
 
 echo "== e2e_ingest: reset =="
-rm -rf wiki brain.db brain.db-wal brain.db-shm .brain
-$PY scripts/brain_db.py --init >/dev/null
+rm -rf wiki hera.db hera.db-wal hera.db-shm .hera
+$PY scripts/hera_db.py --init >/dev/null
 
 echo "== e2e_ingest: run =="
 $PY scripts/ingest.py "$FIXTURE" --json > /tmp/e2e_ingest.json
@@ -75,8 +75,8 @@ grep -qF "sample_article" wiki/log.md \
 $PY - <<'PY'
 import sys, pathlib
 sys.path.insert(0, "scripts")
-import brain_db
-c = brain_db.connect(pathlib.Path("brain.db"))
+import hera_db
+c = hera_db.connect(pathlib.Path("hera.db"))
 np = c.execute("select count(*) from pages").fetchone()[0]
 nf = c.execute("select count(*) from pages_fts").fetchone()[0]
 nv = c.execute("select count(*) from pages_vec").fetchone()[0]
@@ -87,7 +87,7 @@ print(f"db rows: pages={np} fts={nf} vec={nv}")
 PY
 
 # 6) doctor still clean.
-$PY scripts/brain_db.py --doctor >/dev/null || { echo "FAIL: doctor not clean"; exit 1; }
+$PY scripts/hera_db.py --doctor >/dev/null || { echo "FAIL: doctor not clean"; exit 1; }
 
 # 7) raw source preserved.
 test -s wiki/.raw/articles/sample_article.md || { echo "FAIL: raw not preserved"; exit 1; }

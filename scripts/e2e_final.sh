@@ -2,8 +2,8 @@
 # e2e_final.sh — CP-FINAL orchestrator (clean-state end-to-end).
 #
 # Each --step reproduces one of the phase checks against the shared repo state.
-# The `setup` step wipes brain.db and wiki/ (keeps .claude/, scripts/, tests/,
-# team-brain-staging/) so downstream steps run from a clean baseline.
+# The `setup` step wipes hera.db and wiki/ (keeps .claude/, scripts/, tests/,
+# team-staging/) so downstream steps run from a clean baseline.
 #
 # Usage: bash scripts/e2e_final.sh --step <setup|ingest|inject|score|conflicts|filing|publish|prune>
 
@@ -24,13 +24,13 @@ done
 case "$STEP" in
   setup)
     echo "== CP-FINAL::setup =="
-    # Wipe brain.db, wiki/, .brain/, but keep .claude/, scripts/, tests/, team-brain-staging/, .venv/.
-    rm -f brain.db brain.db-wal brain.db-shm
-    rm -rf wiki .brain
+    # Wipe hera.db, wiki/, .hera/, but keep .claude/, scripts/, tests/, team-staging/, .venv/.
+    rm -f hera.db hera.db-wal hera.db-shm
+    rm -rf wiki .hera
     mkdir -p wiki
     bash scripts/preflight.sh
-    $PY scripts/brain_db.py --init
-    $PY scripts/brain_db.py --doctor
+    $PY scripts/hera_db.py --init
+    $PY scripts/hera_db.py --doctor
     echo "== CP-FINAL::setup OK =="
     exit 0
     ;;

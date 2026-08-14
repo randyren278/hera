@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 
 OLLAMA = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-MODEL = os.environ.get("BRAIN_EMBED_MODEL", "nomic-embed-text")
+MODEL = os.environ.get("HERA_EMBED_MODEL", "nomic-embed-text")
 DIM = 768
 RETRIES = 3
 

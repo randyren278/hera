@@ -22,23 +22,23 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 import ingest  # noqa: E402
 import conflicts  # noqa: E402
 
 
 @pytest.fixture
 def vault(tmp_path, monkeypatch):
-    db = tmp_path / "brain.db"
+    db = tmp_path / "hera.db"
     wiki = tmp_path / "wiki"
-    monkeypatch.setattr(brain_db, "DB_PATH", db)
+    monkeypatch.setattr(hera_db, "DB_PATH", db)
     monkeypatch.setattr(ingest, "REPO", tmp_path)
     monkeypatch.setattr(ingest, "WIKI", wiki)
     monkeypatch.setattr(conflicts, "REPO", tmp_path)
     for sub in ("concepts", "entities", "sources", ".raw/articles"):
         (wiki / sub).mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(ingest._embed, "embed", lambda text: [0.0] * 768)
-    conn = brain_db.ensure_ready(db)
+    conn = hera_db.ensure_ready(db)
     yield conn, tmp_path, monkeypatch
     conn.close()
 

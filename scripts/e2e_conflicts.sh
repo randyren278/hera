@@ -15,7 +15,7 @@
 #                   : invoke conflicts.py to resolve the queued conflict as
 #                     resolved_new; assert Superseded block on page.
 #
-# We do NOT delete brain.db between mode invocations — the runner checks
+# We do NOT delete hera.db between mode invocations — the runner checks
 # expect the state built in the default run.
 #
 # Byte-identity check: after enqueue, the page file's md5 must equal the
@@ -34,15 +34,15 @@ PAGE_PATH="wiki/concepts/RAG Origins.md"
 PAGE_ULID="01KX2CONFLICTTEST00000000000"     # fixed ID so re-runs are stable
 
 seed_page() {
-  # Reset the brain state to a known baseline: one page with a specific claim.
+  # Reset the vault state to a known baseline: one page with a specific claim.
   # Idempotent: we upsert (INSERT OR REPLACE) rather than delete-then-insert,
   # so FKs from prior runs (pages_fts_map, pages_vec, resolved conflicts) don't block.
   rm -f "$PAGE_PATH"
   $PY - <<'PY'
 import sys, pathlib, time
 sys.path.insert(0, "scripts")
-import brain_db, ingest
-c = brain_db.connect()
+import hera_db, ingest
+c = hera_db.connect()
 now = time.strftime("%Y-%m-%dT%H:%M:%S")
 
 # Clear any conflicts referencing the seeded page id — resolved rows from earlier
@@ -113,8 +113,8 @@ case "$MODE" in
     fi
     CID=$($PY - <<'PY'
 import sys, pathlib; sys.path.insert(0,"scripts")
-import brain_db
-c = brain_db.connect()
+import hera_db
+c = hera_db.connect()
 r = c.execute("SELECT id FROM conflicts WHERE status='open' ORDER BY id DESC LIMIT 1").fetchone()
 print(r[0] if r else "")
 PY
@@ -138,9 +138,9 @@ NEW_BODY="Retrieval-Augmented Generation was originally published by DeepMind re
 $PY - <<PY
 import sys, pathlib, os
 sys.path.insert(0, "scripts")
-import brain_db, ingest
+import hera_db, ingest
 
-conn = brain_db.connect()
+conn = hera_db.connect()
 
 # Fetch the current page id + body (frontmatter-stripped) as the "existing".
 existing = ingest._existing_page_at(conn, pathlib.Path("wiki/concepts/RAG Origins.md"))
@@ -179,8 +179,8 @@ fi
 # Conflict row check
 NROWS=$($PY - <<'PY'
 import sys, pathlib; sys.path.insert(0,"scripts")
-import brain_db
-c = brain_db.connect()
+import hera_db
+c = hera_db.connect()
 print(c.execute("SELECT count(*) FROM conflicts WHERE status='open'").fetchone()[0])
 PY
 )

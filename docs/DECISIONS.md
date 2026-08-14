@@ -16,15 +16,15 @@ These are reproduced verbatim from `CLAUDE.md` (the session-time rules the agent
 
 | # | Rule (verbatim) | Why: the failure it prevents | Blast radius |
 |---|---|---|---|
-| **NEVER-1** | **Never push to `team-brain-staging/`'s remote automatically.** The remote is whatever the user configured at `/brain-setup` (`SECOND_BRAIN_TEAM_REMOTE` in `~/.claude/second-brain.env`) — no fixed remote. Only push after the user has reviewed the diff and explicitly said "push" / "publish" / "approve". _(2026-07-10: the remote became user-configurable at setup; it was previously hard-coded to a single fixed team-brain repo. The auto-push invariant is unchanged.)_ | Auto-push leaks private, un-reviewed notes to a shared remote. The human diff review is the real safety mechanism (LLM strip is only defense-in-depth). | **CATASTROPHIC** |
-| **NEVER-2** | **Never edit `brain.db` by hand outside `scripts/`.** Use `scripts/brain_db.py` or the engines. If you must SQL, do it via `brain_db.connect()` so `sqlite-vec` is loaded. | A raw `sqlite3` connection has no `sqlite-vec` extension loaded, so any query touching `pages_vec` errors; hand edits also skip FK enforcement and WAL. | **CATASTROPHIC** |
+| **NEVER-1** | **Never push to `team-staging/`'s remote automatically.** The remote is whatever the user configured at `/hera-setup` (`HERA_TEAM_REMOTE` in `~/.claude/hera.env`) — no fixed remote. Only push after the user has reviewed the diff and explicitly said "push" / "publish" / "approve". _(2026-07-10: the remote became user-configurable at setup; it was previously hard-coded to a single fixed team space repo. The auto-push invariant is unchanged.)_ | Auto-push leaks private, un-reviewed notes to a shared remote. The human diff review is the real safety mechanism (LLM strip is only defense-in-depth). | **CATASTROPHIC** |
+| **NEVER-2** | **Never edit `hera.db` by hand outside `scripts/`.** Use `scripts/hera_db.py` or the engines. If you must SQL, do it via `hera_db.connect()` so `sqlite-vec` is loaded. | A raw `sqlite3` connection has no `sqlite-vec` extension loaded, so any query touching `pages_vec` errors; hand edits also skip FK enforcement and WAL. | **CATASTROPHIC** |
 | **NEVER-3** | **Never bypass locking.** All writes to `wiki/` go through `locks.lock()`. If a page is locked, the writer overflows to `wiki/.pending/`, which merges on next acquire. Don't work around this. | Concurrent writers corrupt page files; the delta-overflow protocol is the only thing that makes concurrent writes safe. | **CATASTROPHIC** |
 | **NEVER-4** | **Never delete from `wiki/.archive/`.** Prune is reversible by design; real deletion is a human decision only. | Prune moves files to `.archive/`; deleting them destroys the only copy and makes `restore` impossible. | **CATASTROPHIC** |
 | **NEVER-5** | **Never invoke `claude -p ...` from inside an engine without `CLAUDE_ISOLATION`, and never with `--bare`.** Every subprocess call in `ingest.py` / `publish.py` passes `--setting-sources ""`, `--strict-mcp-config`, `--tools ""`, `--disable-slash-commands` and sets `cwd=CLAUDE_CWD`. | Without isolation, a nested call inherits the Stop hook / `stop_score.py` and CLAUDE.md auto-discovery, firing the vault's own loop recursively. `--bare` used to provide this but skips keychain reads and authenticates only via `ANTHROPIC_API_KEY` or `apiKeyHelper`, so subscription (OAuth) auth fails outright — it is now forbidden. The isolation flags cover the same hook surface `--bare` did, and additionally isolate MCP servers and tools, which `--bare` never did. | **CATASTROPHIC** |
 | **NEVER-6** | **Never disable a hook to "quiet things down".** If a hook is misbehaving, fix it or report it, don't silence the loop. | Every hook already fails open and returns 0; silencing it removes citation scoring or session filing entirely, which the ranking loop depends on. | DEGRADES QUALITY |
 | **NEVER-7** | **Never modify checks to make them pass.** (This vault was built under the Fable plan-verify-execute protocol; the same rule applies to any later verification work.) | A check edited to pass no longer verifies anything; the invariant it guarded silently dies. | DEGRADES QUALITY |
-| **NEVER-8** | **Never bypass `$SECOND_BRAIN_VAULT`.** Hooks and skills locate the vault via that env var (written by `install.sh` to `~/.claude/second-brain.env`). Hard-coding a path breaks global mode and quietly points one machine at the wrong vault. | A hard-coded path works on one machine and silently points another at the wrong vault; global-mode hooks source `second-brain.env` to find the vault from any CWD. | **CATASTROPHIC** |
-| **NEVER-9** | **Never let team content into personal `brain.db`.** Team pages are indexed only in the separate `team.db` (ADR-14). `team_index.py` opens `TEAM_DB`; the personal engines open `brain.db`. Don't merge the stores or point a team writer at `brain.db`. | Mixing team pages into `brain.db` pollutes your local ranking, citations, and conflicts with other people's notes, and breaks the "your notes only" guarantee of the personal store. | DEGRADES QUALITY |
+| **NEVER-8** | **Never bypass `$HERA_VAULT`.** Hooks and skills locate the vault via that env var (written by `install.sh` to `~/.claude/hera.env`). Hard-coding a path breaks global mode and quietly points one machine at the wrong vault. | A hard-coded path works on one machine and silently points another at the wrong vault; global-mode hooks source `hera.env` to find the vault from any CWD. | **CATASTROPHIC** |
+| **NEVER-9** | **Never let team content into personal `hera.db`.** Team pages are indexed only in the separate `team.db` (ADR-14). `team_index.py` opens `TEAM_DB`; the personal engines open `hera.db`. Don't merge the stores or point a team writer at `hera.db`. | Mixing team pages into `hera.db` pollutes your local ranking, citations, and conflicts with other people's notes, and breaks the "your notes only" guarantee of the personal store. | DEGRADES QUALITY |
 
 ### Enforcement points (where the rule lives in code)
 
@@ -33,14 +33,14 @@ Co-locating the rule with its enforcement lets a maintainer grep from either dir
 | Rule | Enforced by |
 |---|---|
 | NEVER-1 | `scripts/publish.py`: `commit_and_push()` is a **separate function invoked only by the `push` CLI subcommand**; no `stage`/`diff` path calls it. |
-| NEVER-2 | `scripts/brain_db.py`: `connect()` runs `PRAGMA foreign_keys=ON`, `PRAGMA journal_mode=WAL`, and `sqlite_vec.load(conn)` on every connection. |
+| NEVER-2 | `scripts/hera_db.py`: `connect()` runs `PRAGMA foreign_keys=ON`, `PRAGMA journal_mode=WAL`, and `sqlite_vec.load(conn)` on every connection. |
 | NEVER-3 | `scripts/locks.py`: `locks.lock(...)` context manager; every engine (`ingest.py`, `conflicts.py`, `prune.py`) imports it and routes all `wiki/` writes through it. |
 | NEVER-4 | `scripts/prune.py`: archives via `shutil.move` to `wiki/.archive/{page_id}.{name}`; `restore` moves back and re-indexes. No engine deletes from `.archive/`. |
 | NEVER-5 | `scripts/ingest.py` (3 nested calls) + `scripts/publish.py` (1 call), all `[CLAUDE_BIN, "-p", *CLAUDE_ISOLATION, "--output-format", "text", "--model", CLAUDE_MODEL]` with `cwd=CLAUDE_CWD`. Guarded by `tests/test_nested_claude_isolation.py`. |
-| NEVER-8 | All four hooks resolve `REPO` from `$SECOND_BRAIN_VAULT` first, falling back to `pathlib.Path(__file__).resolve().parents[2]`; the global install writes the env var via `scripts/install/locator.sh`. |
-| NEVER-9 | `scripts/team_index.py`: `TEAM_DB = $BRAIN_TEAM_DB or REPO/team.db`, opened via `brain_db.connect(TEAM_DB)`; no team writer references the default `brain.db`. `prompt_inject.py` queries `team.db` on a separate connection in its own try/except. |
+| NEVER-8 | All four hooks resolve `REPO` from `$HERA_VAULT` first, falling back to `pathlib.Path(__file__).resolve().parents[2]`; the global install writes the env var via `scripts/install/locator.sh`. |
+| NEVER-9 | `scripts/team_index.py`: `TEAM_DB = $HERA_TEAM_DB or REPO/team.db`, opened via `hera_db.connect(TEAM_DB)`; no team writer references the default `hera.db`. `prompt_inject.py` queries `team.db` on a separate connection in its own try/except. |
 
-> **Note on NEVER-2's scope.** `brain_db.py` itself does *not* read `$SECOND_BRAIN_VAULT`; its `REPO` is derived from `__file__` and the DB path is overridable only via `BRAIN_DB`. The `$SECOND_BRAIN_VAULT` locator (NEVER-8) governs *hooks and skills*, not `brain_db.py`. Do not conflate the two locators when refactoring.
+> **Note on NEVER-2's scope.** `hera_db.py` itself does *not* read `$HERA_VAULT`; its `REPO` is derived from `__file__` and the DB path is overridable only via `HERA_DB`. The `$HERA_VAULT` locator (NEVER-8) governs *hooks and skills*, not `hera_db.py`. Do not conflate the two locators when refactoring.
 
 ---
 
@@ -61,12 +61,12 @@ One decision per row, stated as the decision (not the problem). The key decision
 | ADR-09 | Conflict pending state | **Freeze-on-ingest**: the page file is untouched while a conflict is `open`; the new claim lives only in a SQLite queue row. | Accepted |
 | ADR-10 | Conflict resolution surfacing | Origin-scoped, deferred-interactive; **four channels**; relevance-triggered (channel 3) is deliberately unscoped. | Accepted |
 | ADR-11 | Session work vs. external sources | Explicit session statements auto-win (auto-resolve as `resolved_new`); implications and external contradictions queue. | Accepted |
-| ADR-13 | Team-brain staging hygiene | Owner folder is named from `BRAIN_OWNER` (default `randy`), never the git author name; the staging clone ships a committed `.gitignore` so `git add -A` can't sweep OS junk into a publish. | Accepted |
-| ADR-14 | Team-brain retrieval | Team pages get the **same hybrid retrieval as local** (BM25 + dense + RRF), indexed by publisher ULID in a **separate `team.db`** (never `brain.db`), refreshed on sync and fused owner-tagged into injection. | Accepted |
+| ADR-13 | Team space staging hygiene | Owner folder is named from `HERA_OWNER` (default `randy`), never the git author name; the staging clone ships a committed `.gitignore` so `git add -A` can't sweep OS junk into a publish. | Accepted |
+| ADR-14 | Team space retrieval | Team pages get the **same hybrid retrieval as local** (BM25 + dense + RRF), indexed by publisher ULID in a **separate `team.db`** (never `hera.db`), refreshed on sync and fused owner-tagged into injection. | Accepted |
 
 > **Terms used across this log.** *Hybrid search* = two rankers over one query — BM25 (keyword match over the FTS5 index) and dense-vector cosine (semantic) — merged with *Reciprocal Rank Fusion (RRF)*, which combines by each hit's rank *position*, not its raw score, so the two incomparable scales fuse cleanly. *ULID* = a page's permanent id (see [ONBOARDING.md § Glossary](ONBOARDING.md#glossary)). "ADR" throughout is an **Architecture Decision Record**.
 
-> **A twelfth decision existed in the original design: ADR-12 (query-mode budgets).** It governs a `/brain-query` skill that is **not** among the installed skills, so it is out of scope here and omitted from the table above. If query mode is ever built, add it back as ADR-12.
+> **A twelfth decision existed in the original design: ADR-12 (query-mode budgets).** It governs a `/hera-query` skill that is **not** among the installed skills, so it is out of scope here and omitted from the table above. If query mode is ever built, add it back as ADR-12.
 
 ### The ADRs a maintainer bumps into most, expanded
 
@@ -98,7 +98,7 @@ Conflicts record the `origin_cwd` of the session that created them. Resolution s
 1. **Interactive ingest**: immediate, user present → resolve inline.
 2. **SessionStart**: deferred-interactive, origin-scoped. `session_start.py` injects full claim text for conflicts matching the current `cwd` (or with `origin_cwd IS NULL`); conflicts from *other* projects surface only as a quiet count line.
 3. **Relevance-triggered per-turn injection**: deliberately **unscoped**. `prompt_inject.py` appends a `⚠ contested` warning naming the existing and new claims (`existing: … · new: … · unresolved.`) to any retrieved contested page, regardless of origin, because relevance to the current prompt is what matters.
-4. **`/brain-conflicts`**: on-demand, global queue via `conflicts.py list`.
+4. **`/hera-conflicts`**: on-demand, global queue via `conflicts.py list`.
 
 If you add a fifth surface, keep channel 3 unscoped and the others origin-scoped. That asymmetry is the decision.
 
@@ -110,29 +110,29 @@ Lives in `ingest.py` (not `conflicts.py`). When `source_kind == "session"` **and
 
 Originally this ADR planned to add MCPVault (`@bitbonsai/mcpvault`) as a file-based MCP server for editing vault pages from within an interactive session. It was **never implemented** — the setup step stayed a `# CP-3` TODO and no engine or hook ever called an MCP tool. In practice a *different* server (`mcp-obsidian`, backed by the Obsidian Local REST API plugin) was configured by hand in `~/.claude.json`, but it too was standalone: nothing in the pipeline depended on it, and it was removed (2026-07-12).
 
-The decision is superseded by **ADR-05**: all vault access is **direct-to-disk**, and Obsidian is only a front end for reading/hand-editing the Markdown. An interactive MCP server is **optional** — a convenience for editing notes from a chat, never a requirement. The vault ingests, searches, scores, resolves conflicts, prunes, and syncs the team brain with Obsidian closed or absent. Setup no longer installs any MCP server or Obsidian editing skills.
+The decision is superseded by **ADR-05**: all vault access is **direct-to-disk**, and Obsidian is only a front end for reading/hand-editing the Markdown. An interactive MCP server is **optional** — a convenience for editing notes from a chat, never a requirement. The vault ingests, searches, scores, resolves conflicts, prunes, and syncs the team space with Obsidian closed or absent. Setup no longer installs any MCP server or Obsidian editing skills.
 
-#### ADR-13: Team-brain staging hygiene
+#### ADR-13: Team space staging hygiene
 
-The `team-brain-staging/` clone is a **separate git repo** from the vault (it tracks whatever `SECOND_BRAIN_TEAM_REMOTE` points at, not this vault's own remote). Two consequences bit us and are now closed:
+The `team-staging/` clone is a **separate git repo** from the vault (it tracks whatever `HERA_TEAM_REMOTE` points at, not this vault's own remote). Two consequences bit us and are now closed:
 
-- **Owner identity.** `publish.py` and `team_remove.py` both resolve the owner from `BRAIN_OWNER` (default `randy`) and confine every write and every `git rm` to `team-brain-staging/<owner>/`. `/brain-setup` originally created the owner folder from the git author name, which on a machine whose git identity differs from `BRAIN_OWNER` produced an **orphan folder** (named after the git author, e.g. `<git-author>/.gitkeep`) that no writer ever touched and owner-scoped removal could never clean. Setup now uses `${BRAIN_OWNER:-randy}` — one identity, shared by every path.
+- **Owner identity.** `publish.py` and `team_remove.py` both resolve the owner from `HERA_OWNER` (default `randy`) and confine every write and every `git rm` to `team-staging/<owner>/`. `/hera-setup` originally created the owner folder from the git author name, which on a machine whose git identity differs from `HERA_OWNER` produced an **orphan folder** (named after the git author, e.g. `<git-author>/.gitkeep`) that no writer ever touched and owner-scoped removal could never clean. Setup now uses `${HERA_OWNER:-randy}` — one identity, shared by every path.
 - **OS junk.** The engines render the review diff with `git add -A` inside the clone (`publish.py`, `team_remove.py`). Because the clone has no ignore rules of its own, a Finder `.DS_Store` at the staging root gets staged and swept into the next publish. `team_sync.py clone-or-pull` now drops a committed `.gitignore` into the clone so `.DS_Store` and editor junk are ignored at the source.
 
 Both artifacts are owner-review-committed out of the live remote, not force-pushed — history is the undo (consistent with ADR-08's human-gated push).
 
-#### ADR-14: Team-brain hybrid retrieval
+#### ADR-14: Team space hybrid retrieval
 
-Team pages were originally found by a keyword/word-count disk scan — a different, weaker retrieval path than local recall. The decision: give the team brain the **same substrate as the personal brain** (BM25 via FTS5 + dense `sqlite-vec` + RRF, `k=60`), so a teammate's page ranks against a query exactly as your own pages do, keyed by the publisher's ULID.
+Team pages were originally found by a keyword/word-count disk scan — a different, weaker retrieval path than local recall. The decision: give the team space the **same substrate as the personal vault** (BM25 via FTS5 + dense `sqlite-vec` + RRF, `k=60`), so a teammate's page ranks against a query exactly as your own pages do, keyed by the publisher's ULID.
 
-The retrieval is identical; the **store is deliberately separate**. `scripts/team_index.py` indexes `team-brain-staging/<owner>/` into a distinct `team.db` (opened with `brain_db.connect(TEAM_DB)`, `TEAM_DB = $BRAIN_TEAM_DB` or `<repo>/team.db`), with the same schema as `brain.db` plus a team-only `page_meta(page_id, owner, source, rel_path, mtime)` for attribution. `search.team_hybrid_search` runs the shared `_rrf_fuse` over that connection; `team_search.py` and `prompt_inject.py` fuse the owner-tagged team hits with local `hybrid_search` on the same score scale.
+The retrieval is identical; the **store is deliberately separate**. `scripts/team_index.py` indexes `team-staging/<owner>/` into a distinct `team.db` (opened with `hera_db.connect(TEAM_DB)`, `TEAM_DB = $HERA_TEAM_DB` or `<repo>/team.db`), with the same schema as `hera.db` plus a team-only `page_meta(page_id, owner, source, rel_path, mtime)` for attribution. `search.team_hybrid_search` runs the shared `_rrf_fuse` over that connection; `team_search.py` and `prompt_inject.py` fuse the owner-tagged team hits with local `hybrid_search` on the same score scale.
 
 Two properties fall out and must be preserved:
 
-- **Isolation.** No team page, ULID row, or citation ever enters your personal `brain.db`. `team.db` is a separate file; `team_index.py` opens *only* `TEAM_DB`, and the per-turn team query is a separate connection in its own try/except. This is why `team.db` can hold *every* publisher's pages without polluting your local ranking, citations, or conflicts. It is the same class of invariant as NEVER-2 (don't cross the stores).
-- **Cost on sync, not per query.** `team_sync.py::_reindex_after_sync()` re-embeds only changed pages (`reindex(changed_only=True)`) after a successful pull; a reindex failure (e.g. Ollama down) warns and never fails the sync, and the team query is fail-open at injection time. `team.db` is rebuildable runtime state, git-ignored like `brain.db`.
+- **Isolation.** No team page, ULID row, or citation ever enters your personal `hera.db`. `team.db` is a separate file; `team_index.py` opens *only* `TEAM_DB`, and the per-turn team query is a separate connection in its own try/except. This is why `team.db` can hold *every* publisher's pages without polluting your local ranking, citations, or conflicts. It is the same class of invariant as NEVER-2 (don't cross the stores).
+- **Cost on sync, not per query.** `team_sync.py::_reindex_after_sync()` re-embeds only changed pages (`reindex(changed_only=True)`) after a successful pull; a reindex failure (e.g. Ollama down) warns and never fails the sync, and the team query is fail-open at injection time. `team.db` is rebuildable runtime state, git-ignored like `hera.db`.
 
-See [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team-brain-index) and [PIPELINES.md § team retrieval](PIPELINES.md#6-team-brain-retrieval-scriptsteam_indexpy-scriptsteam_searchpy).
+See [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team space-index) and [PIPELINES.md § team retrieval](PIPELINES.md#6-team space-retrieval-scriptsteam_indexpy-scriptsteam_searchpy).
 
 #### RRF k=60 (ADR-04): the ranking constants
 

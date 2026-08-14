@@ -1,4 +1,4 @@
-"""CP-5: brain_db --doctor never depends on bash for its preflight step."""
+"""CP-5: hera_db --doctor never depends on bash for its preflight step."""
 from __future__ import annotations
 
 import pathlib
@@ -9,7 +9,7 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 sys.path.insert(0, str(REPO / "scripts" / "install"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 import preflight  # noqa: E402
 
 
@@ -39,7 +39,7 @@ def test_doctor_uses_python_preflight_not_bash(monkeypatch, capsys):
 
     monkeypatch.setattr(subprocess, "run", guard_run)
 
-    rc = brain_db.doctor(verbose=False)
+    rc = hera_db.doctor(verbose=False)
     out = capsys.readouterr().out
     assert "ok    preflight" in out
     # doctor's own return is about DB integrity etc.; on this healthy repo it's 0.
@@ -62,7 +62,7 @@ def test_doctor_warns_when_no_python_preflight_and_no_bash(monkeypatch, capsys):
     real_which = shutil.which
     monkeypatch.setattr(shutil, "which", lambda n: None if n == "bash" else real_which(n))
 
-    rc = brain_db.doctor(verbose=False)
+    rc = hera_db.doctor(verbose=False)
     out = capsys.readouterr().out
     # Preflight is skipped-with-warning, not a FAIL.
     assert "preflight" in out

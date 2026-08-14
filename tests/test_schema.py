@@ -1,4 +1,4 @@
-"""Schema round-trip tests for brain_db.
+"""Schema round-trip tests for hera_db.
 
 Covers CP-1 checks:
   - schema creates cleanly on a fresh DB
@@ -19,14 +19,14 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 
 
 @pytest.fixture
 def db(tmp_path, monkeypatch):
-    p = tmp_path / "brain.db"
-    monkeypatch.setattr(brain_db, "DB_PATH", p)
-    conn = brain_db.ensure_ready(p)
+    p = tmp_path / "hera.db"
+    monkeypatch.setattr(hera_db, "DB_PATH", p)
+    conn = hera_db.ensure_ready(p)
     yield conn
     conn.close()
 
@@ -101,6 +101,6 @@ def test_vec_knn_roundtrip(db):
 def test_init_schema_is_idempotent(db, tmp_path):
     # Running ensure_ready again on the same file must not error and must
     # not create duplicate schema_version rows.
-    brain_db.ensure_ready(pathlib.Path(db.execute("PRAGMA database_list").fetchone()[2]))
+    hera_db.ensure_ready(pathlib.Path(db.execute("PRAGMA database_list").fetchone()[2]))
     n = db.execute("SELECT count(*) FROM schema_version WHERE version=1").fetchone()[0]
     assert n == 1

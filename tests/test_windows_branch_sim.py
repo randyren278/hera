@@ -72,26 +72,26 @@ def test_registration_is_copy_not_symlink(tmp_path):
     pathlib instantiate WindowsPath on a POSIX host, which Python forbids;
     registration.py has no os.name branch to exercise.)"""
     vault = tmp_path / "vault"
-    (vault / ".claude" / "skills" / "brain-setup").mkdir(parents=True)
-    (vault / ".claude" / "skills" / "brain-setup" / "SKILL.md").write_text("x")
+    (vault / ".claude" / "skills" / "hera-setup").mkdir(parents=True)
+    (vault / ".claude" / "skills" / "hera-setup" / "SKILL.md").write_text("x")
     home = tmp_path / "home"
     skills = home / "skills"
 
-    registered = registration.register_skills(vault, skills, ["brain-setup"], home)
-    assert registered == ["brain-setup"]
-    dst = skills / "brain-setup"
+    registered = registration.register_skills(vault, skills, ["hera-setup"], home)
+    assert registered == ["hera-setup"]
+    dst = skills / "hera-setup"
     assert dst.is_dir() and not dst.is_symlink()
     manifest = json.loads((home / registration.MANIFEST_NAME).read_text())
-    assert "brain-setup" in manifest["skills"]
+    assert "hera-setup" in manifest["skills"]
     assert registration.unregister_skills(vault, skills, home) == 1
     assert not dst.exists()
 
 
-def test_brain_cli_windows_interpreter(monkeypatch):
-    """brain_cli resolves the Windows venv interpreter when os.name is nt."""
-    import brain_cli
+def test_hera_cli_windows_interpreter(monkeypatch):
+    """hera_cli resolves the Windows venv interpreter when os.name is nt."""
+    import hera_cli
     monkeypatch.setattr(os, "name", "nt")
-    py = brain_cli._venv_python(WIN_VAULT)
+    py = hera_cli._venv_python(WIN_VAULT)
     assert py == WIN_VAULT / ".venv" / "Scripts" / "python.exe"
 
 
@@ -114,8 +114,8 @@ def test_session_end_file_detach_flags_windows(monkeypatch):
 
     import subprocess
     monkeypatch.setattr(subprocess, "Popen", FakePopen)
-    monkeypatch.delenv("BRAIN_FILING_SYNC", raising=False)
-    monkeypatch.delenv("SECOND_BRAIN_OFF", raising=False)
+    monkeypatch.delenv("HERA_FILING_SYNC", raising=False)
+    monkeypatch.delenv("HERA_OFF", raising=False)
 
     # Force the hook (not CLI) branch: main() takes the CLI path when argv has
     # >=3 elements, so pin argv to the bare hook name.

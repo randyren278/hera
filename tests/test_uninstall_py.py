@@ -1,4 +1,4 @@
-"""CP-3: install → uninstall leaves no second-brain residue (roundtrip)."""
+"""CP-3: install → uninstall leaves no Hera residue (roundtrip)."""
 from __future__ import annotations
 
 import json
@@ -17,7 +17,7 @@ def test_uninstall_roundtrip(vault_env):
     assert r.returncode == 0, f"install failed:\n{r.stdout}\n{r.stderr}"
 
     settings = home / "settings.json"
-    locator = home / "second-brain.env"
+    locator = home / "hera.env"
     skills = home / "skills"
 
     # Post-install invariants.
@@ -25,7 +25,7 @@ def test_uninstall_roundtrip(vault_env):
     hooks = _read_json(settings)["hooks"]
     assert set(hooks) >= {"SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"}
     assert locator.exists(), "locator not written"
-    assert (skills / "brain-setup").is_dir()
+    assert (skills / "hera-setup").is_dir()
     # Project settings disabled so hooks don't double-fire.
     assert not proj.exists(), "project settings.json should be disabled"
     assert proj.with_suffix(".json.disabled").exists()
@@ -38,7 +38,7 @@ def test_uninstall_roundtrip(vault_env):
     # settings.json held only our hooks → removed entirely.
     assert not settings.exists(), "settings.json should be gone (held only our hooks)"
     assert not locator.exists(), "locator should be removed"
-    for name in ("brain-setup", "brain-ingest", "brain-conflicts", "brain-prune", "brain-team"):
+    for name in ("hera-setup", "hera-ingest", "hera-conflicts", "hera-prune", "hera-team"):
         assert not (skills / name).exists(), f"skill {name} not removed"
     # Project settings re-enabled.
     assert proj.exists(), "project settings.json should be re-enabled"

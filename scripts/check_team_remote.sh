@@ -22,7 +22,7 @@ fail() { echo "FAIL: $1"; exit 1; }
 # A throwaway vault so team_sync.py's STAGING lands under $TMP, never the real vault.
 VAULT="$TMP/vault"
 mkdir -p "$VAULT"
-STAGING="$VAULT/team-brain-staging"
+STAGING="$VAULT/team-staging"
 
 # A reachable local bare repo with one commit on main.
 BARE="$TMP/team.git"
@@ -31,7 +31,7 @@ SEED="$TMP/seed"
 git init --quiet "$SEED"
 git -C "$SEED" config user.email t@e.st
 git -C "$SEED" config user.name tester
-echo "# team brain" > "$SEED/README.md"
+echo "# team space" > "$SEED/README.md"
 git -C "$SEED" add -A
 git -C "$SEED" commit --quiet -m "seed"
 git -C "$SEED" branch -M main
@@ -43,15 +43,15 @@ NONEXISTENT="$TMP/does-not-exist.git"
 run_sync() {  # run_sync <remote-or-empty> <args...>
   local remote="$1"; shift
   if [ -z "$remote" ]; then
-    env -u SECOND_BRAIN_TEAM_REMOTE SECOND_BRAIN_VAULT="$VAULT" "$PY" "$SYNC" "$@"
+    env -u HERA_TEAM_REMOTE HERA_VAULT="$VAULT" "$PY" "$SYNC" "$@"
   else
-    SECOND_BRAIN_TEAM_REMOTE="$remote" SECOND_BRAIN_VAULT="$VAULT" "$PY" "$SYNC" "$@"
+    HERA_TEAM_REMOTE="$remote" HERA_VAULT="$VAULT" "$PY" "$SYNC" "$@"
   fi
 }
 
 # --- (a) unset remote: clean no-op ---
-# Also blank HOME so a real ~/.claude/second-brain.env can't leak a remote in.
-OUT="$(env -u SECOND_BRAIN_TEAM_REMOTE HOME="$TMP" SECOND_BRAIN_VAULT="$VAULT" "$PY" "$SYNC" clone-or-pull 2>&1)"
+# Also blank HOME so a real ~/.claude/hera.env can't leak a remote in.
+OUT="$(env -u HERA_TEAM_REMOTE HOME="$TMP" HERA_VAULT="$VAULT" "$PY" "$SYNC" clone-or-pull 2>&1)"
 RC=$?
 [ $RC -eq 0 ] || fail "(a) unset remote exited $RC, expected 0"
 echo "$OUT" | grep -q "No team space configured" || fail "(a) missing no-team message: $OUT"

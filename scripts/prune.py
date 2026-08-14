@@ -1,4 +1,4 @@
-"""prune.py — /brain-prune engine (design §9.5, ADR-07).
+"""prune.py — /hera-prune engine (design §9.5, ADR-07).
 
 Rank eligible pages by total citation points, drop the middle band, archive
 the losers. Nothing is destroyed — archived pages stay under wiki/.archive/
@@ -35,7 +35,7 @@ from dataclasses import dataclass
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 import locks     # noqa: E402
 
 
@@ -191,7 +191,7 @@ def _cli() -> int:
     p3.add_argument("page_id")
 
     a = ap.parse_args()
-    conn = brain_db.connect()
+    conn = hera_db.connect()
 
     if a.cmd == "candidates":
         cs = eligible(conn)

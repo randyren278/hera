@@ -33,13 +33,13 @@ because nothing else is verifiable until it lands.
 ### Non-goals
 
 - **The team-brain subsystem stays.** It no-ops cleanly when
-  `SECOND_BRAIN_TEAM_REMOTE` is unset, and it remains useful for
+  `HERA_TEAM_REMOTE` is unset, and it remains useful for
   collaborating with friends on a personal project. No files removed, no
   ADR-14 change, its tests stay in the suite.
 - No refactoring of search, ranking, locking, or the hook protocol.
 - No new features.
-- No renaming of `SECOND_BRAIN_VAULT`, `SECOND_BRAIN_OFF`, or
-  `~/.claude/second-brain.env`. Renaming them breaks the existing global
+- No renaming of `HERA_VAULT`, `HERA_OFF`, or
+  `~/.claude/hera.env`. Renaming them breaks the existing global
   install for no benefit.
 
 ---
@@ -81,7 +81,7 @@ There's an issue with the selected model (claude-opus-latest). It may not
 exist or you may not have access to it.
 ```
 
-`BRAIN_CLAUDE_MODEL` defaults to `claude-opus-latest` in both `ingest.py:57`
+`HERA_CLAUDE_MODEL` defaults to `claude-opus-latest` in both `ingest.py:57`
 and `publish.py:39`. The `sonnet` and `opus` aliases both resolve correctly.
 
 ### Fix
@@ -98,7 +98,7 @@ $ echo 'Return ONE JSON object: {"ok": true}. Nothing else.' \
 Add to both `scripts/ingest.py` and `scripts/publish.py`:
 
 ```python
-CLAUDE_MODEL = os.environ.get("BRAIN_CLAUDE_MODEL", "sonnet")
+CLAUDE_MODEL = os.environ.get("HERA_CLAUDE_MODEL", "sonnet")
 
 # Isolation flags: replaces --bare. --bare skipped keychain reads, which
 # broke subscription (OAuth) auth entirely. These achieve the same
@@ -169,7 +169,7 @@ Locations to update:
 - `docs/DECISIONS.md` NEVER-5 row + the enforcement-location row
 - `docs/PIPELINES.md` lines 22, 24, 37, 42, 58, 67, 209, 219, 267
 - `docs/ARCHITECTURE.md` lines 170, 188
-- `.claude/skills/brain-ingest/SKILL.md` line 48
+- `.claude/skills/hera-ingest/SKILL.md` line 48
 
 ### Verification
 
@@ -179,7 +179,7 @@ constants and patching `subprocess.run`:
 1. No call site passes `--bare`.
 2. All four call sites pass every flag in `CLAUDE_ISOLATION`.
 3. All four call sites pass a `cwd` that is not inside the vault.
-4. `CLAUDE_MODEL` defaults to `sonnet` and honours `BRAIN_CLAUDE_MODEL`.
+4. `CLAUDE_MODEL` defaults to `sonnet` and honours `HERA_CLAUDE_MODEL`.
 
 Plus one live smoke test gated behind an env var (`BRAIN_LIVE_LLM_TEST=1`)
 so a machine without a subscription does not fail the suite.
@@ -202,20 +202,20 @@ will need updating in step with this change.
 ### Keep
 
 - `scripts/seed_index.py` — the indexer. Still works against any pack.
-- `brain_cli.py seed_index` — the entry point.
+- `hera_cli.py seed_index` — the entry point.
 - `seed/README.md` — rewritten to document how to build your own pack.
   The fpa106 description, page counts, and "reproducing the pack" section
   are replaced by the pack format contract: `concepts/` and `entities/`
   directories, baked stable ULIDs in frontmatter, `pinned: true` and
   `tags: [seed]`, no `sources/`.
 
-### `/brain-setup` change
+### `/hera-setup` change
 
 The setup skill currently prompts *"Pre-seed fpa106 SAP knowledge (release
 ops, QRC waves, HARCA, patch processes)? (y/N)"* at `SKILL.md:105`.
 
 The prompt is removed entirely. Setup scaffolds an empty vault and finishes.
-Seeding becomes a deliberate `brain_cli.py seed_index <path>` run when a pack
+Seeding becomes a deliberate `hera_cli.py seed_index <path>` run when a pack
 actually exists. This matches the requirement that seeding not matter at
 install time.
 
@@ -246,7 +246,7 @@ without shipping 137 pages.
 
 ## 4. De-corporatization
 
-The project is named **Hera**, matching its directory. `BRAIN_OWNER` stays
+The project is named **Hera**, matching its directory. `HERA_OWNER` stays
 `randy` — already correct.
 
 ### Audit command
@@ -289,7 +289,7 @@ therefore does not cover them:
 | `scripts/e2e_seed_index.sh`, `scripts/e2e_seed_guards.sh` | Repointed at fixture pack (see §3) |
 | `scripts/build_seed_pack.py` | Deleted (see §3) |
 | `tests/test_hookcmd.py` | `/Users/dev/magnum opus` → `/Users/dev/hera vault`; keeps the deliberate space in the path |
-| `.claude/skills/brain-setup/SKILL.md` | Seed prompt removed; SAP text gone |
+| `.claude/skills/hera-setup/SKILL.md` | Seed prompt removed; SAP text gone |
 | `.claude/settings.local.json` | `/Users/I771473/.claude/**` → `/Users/randyren/.claude/**`; untracked, verify by hand |
 
 ### Docs scope is smaller than first assessed
@@ -334,9 +334,9 @@ is local-only with zero git churn.
 
 ### Wipe
 
-- `brain.db`, `brain.db-wal`, `brain.db-shm`
+- `hera.db`, `hera.db-wal`, `hera.db-shm`
 - `team.db`, `team.db-wal`, `team.db-shm`
-- `.brain/session-*.md`, `.brain/scorer.log`, `.brain/filing.log`
+- `.hera/session-*.md`, `.hera/scorer.log`, `.hera/filing.log`
 - `wiki/.raw/articles/session-*.md`
 - `wiki/.archive/*`
 - Reset `wiki/hot.md`, `wiki/index.md`, `wiki/log.md`, `wiki/overview.md` to
@@ -347,12 +347,12 @@ citation scoring is disabled — referenced from `CLAUDE.md`, not work content.
 
 ### Regenerate
 
-Empty `brain.db` via `brain_db.ensure_ready()`. Verify with
-`brain_db.py --doctor`.
+Empty `hera.db` via `hera_db.ensure_ready()`. Verify with
+`hera_db.py --doctor`.
 
 ### Backup
 
-Copy `brain.db` and `team.db` to the session scratchpad before deleting.
+Copy `hera.db` and `team.db` to the session scratchpad before deleting.
 They are gitignored, so there is no git undo; the copies make the wipe
 recoverable for the duration of this session.
 
@@ -363,14 +363,14 @@ recoverable for the duration of this session.
 1. `.venv/bin/python -m pytest tests/ -q` → **0 failed, 0 errors**
    (baseline: 10 failed, 71 passed, 17 errors)
 2. Every `scripts/e2e_*.sh` and `tests/check_*.sh` exits 0
-3. `.venv/bin/python scripts/brain_db.py --doctor` clean
-4. **A real `/brain-ingest` of a fresh file completes end-to-end on the
+3. `.venv/bin/python scripts/hera_db.py --doctor` clean
+4. **A real `/hera-ingest` of a fresh file completes end-to-end on the
    subscription** — creates source/concept/entity pages with ULIDs, updates
    `hot.md`/`index.md`/`log.md`, and refreshes FTS + vector rows. This is the
    criterion that proves the reported bug is actually fixed; the others are
    necessary but not sufficient.
 5. The §4 audit grep returns empty
-6. `/brain-setup` on a scratch vault completes without prompting about seed
+6. `/hera-setup` on a scratch vault completes without prompting about seed
    data
 
 ---
@@ -384,7 +384,7 @@ been proven for all 10. If any survive the rebuild, they are pre-existing
 bugs outside this scope; they get surfaced and scoped separately rather than
 absorbed silently.
 
-**Wiping `brain.db` is irreversible.** Mitigated by the scratchpad backup
+**Wiping `hera.db` is irreversible.** Mitigated by the scratchpad backup
 in §5.
 
 **Doc example rewrites risk introducing false statements.** Mitigated by the

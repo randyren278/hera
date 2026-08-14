@@ -22,8 +22,8 @@ MODE="${1:-default}"
 reset_all_conflicts() {
   $PY - <<'PY'
 import sys; sys.path.insert(0,"scripts")
-import brain_db
-c = brain_db.connect()
+import hera_db
+c = hera_db.connect()
 c.execute("DELETE FROM conflicts")
 c.execute("DELETE FROM filed_sessions")
 c.commit()
@@ -50,8 +50,8 @@ MD
   $PY - <<'PY'
 import sys, pathlib, time
 sys.path.insert(0,"scripts")
-import brain_db, ingest
-c = brain_db.connect()
+import hera_db, ingest
+c = hera_db.connect()
 now = time.strftime("%Y-%m-%dT%H:%M:%S")
 
 # Wipe any conflicts referencing this page or the stub sources.
@@ -83,15 +83,15 @@ PY
 fire_hook_sync() {
   local sid="$1"; local transcript="$2"
   printf '{"session_id":"%s","transcript_path":"%s"}' "$sid" "$transcript" \
-    | BRAIN_FILING_SYNC=1 $PY $HOOK
+    | HERA_FILING_SYNC=1 $PY $HOOK
 }
 
 count_rows() {
   local sql="$1"
   $PY - <<PY
 import sys; sys.path.insert(0,"scripts")
-import brain_db
-c = brain_db.connect()
+import hera_db
+c = hera_db.connect()
 print(c.execute("$sql").fetchone()[0])
 PY
 }
@@ -124,9 +124,9 @@ case "$MODE" in
     $PY - <<PY
 import sys, pathlib
 sys.path.insert(0, "scripts")
-import brain_db, ingest, conflicts as _conflicts
+import hera_db, ingest, conflicts as _conflicts
 
-conn = brain_db.connect()
+conn = hera_db.connect()
 existing = ingest._existing_page_at(conn, pathlib.Path("wiki/concepts/RAG Origins.md"))
 assert existing is not None
 page_id, old_body = existing
@@ -178,9 +178,9 @@ PY
     $PY - <<PY
 import sys, pathlib
 sys.path.insert(0, "scripts")
-import brain_db, ingest
+import hera_db, ingest
 
-conn = brain_db.connect()
+conn = hera_db.connect()
 existing = ingest._existing_page_at(conn, pathlib.Path("wiki/concepts/RAG Origins.md"))
 assert existing is not None
 page_id, old_body = existing

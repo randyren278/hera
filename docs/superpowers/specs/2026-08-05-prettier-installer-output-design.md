@@ -45,8 +45,8 @@ Approved via HTML mockups (`.superpowers/brainstorm/`), matched against the
 ▸ preflight                        step 1/7
     ✔ ensure .venv + reconcile pip deps
     ✔ ollama model present
-▸ brain.db                         step 2/7
-    ↷ brain.db already present — skipping
+▸ hera.db                         step 2/7
+    ↷ hera.db already present — skipping
 ...
 ✔ install: complete.
 ```
@@ -59,7 +59,7 @@ Approved via HTML mockups (`.superpowers/brainstorm/`), matched against the
 
 > preflight                          step 1/7
     [ok]   ensure .venv + reconcile pip deps
-    [skip] brain.db already present — skipping
+    [skip] hera.db already present — skipping
 ...
 [ok] install: complete.
 ```
@@ -116,7 +116,7 @@ Any exception anywhere in detection → **plain** (never crash to look pretty).
 
 Per approved decision **"keep exact wording, restyle only"**: every step title
 (`step 4/7: merge into settings.json`) and every sub-line (`merged.`,
-`brain.db already present — skipping`, `removed N skill dir(s)`, etc.) stays
+`hera.db already present — skipping`, `removed N skill dir(s)`, etc.) stays
 byte-for-byte identical. Only the marker/glyph/color/box **around** the text is
 added. `preflight.py`'s check names and `ok`/`FAIL` semantics are unchanged;
 its `_emit()` swaps to `ui.ok`/`ui.fail`, and its `preflight:` / `preflight: ok`

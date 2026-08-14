@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""brain_db.py — SQLite access layer for the Second Brain.
+"""hera_db.py — SQLite access layer for the Hera.
 
 Owns:
   - connection factory that loads sqlite-vec
@@ -8,7 +8,7 @@ Owns:
     unmerged-delta count, scorer-log freshness, hook registration
 
 Design invariants:
-  - one file, brain.db in repo root (path overridable via BRAIN_DB env)
+  - one file, hera.db in repo root (path overridable via HERA_DB env)
   - sqlite-vec loaded on every connection (search paths need it)
   - foreign keys ON, WAL journaling (safe for concurrent readers)
   - schema evolution: idempotent CREATE IF NOT EXISTS; a schema_version
@@ -29,8 +29,8 @@ import urllib.request
 import sqlite_vec
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-DB_PATH = pathlib.Path(os.environ.get("BRAIN_DB", REPO / "brain.db"))
-SCORER_LOG = pathlib.Path(os.environ.get("BRAIN_SCORER_LOG", REPO / ".brain" / "scorer.log"))
+DB_PATH = pathlib.Path(os.environ.get("HERA_DB", REPO / "hera.db"))
+SCORER_LOG = pathlib.Path(os.environ.get("HERA_SCORER_LOG", REPO / ".hera" / "scorer.log"))
 WIKI = REPO / "wiki"
 SETTINGS = REPO / ".claude" / "settings.json"
 
@@ -245,7 +245,7 @@ def _doctor_hooks() -> None:
 
     # Neither mode active. If a .disabled project settings exists, this vault
     # was globally installed but its hooks now point elsewhere (e.g. a template
-    # clone whose active brain is a different vault) — say so plainly.
+    # clone whose active vault is a different one) — say so plainly.
     if SETTINGS.with_suffix(".json.disabled").exists():
         _warn("hooks not registered for THIS vault "
               f"(project settings disabled; no global hooks in {home_settings} "

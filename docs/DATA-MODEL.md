@@ -2,7 +2,7 @@
 
 > Reference · for maintainers · assumes you've read the [mental model](ONBOARDING.md#1-what-this-is) and know what a page/citation/conflict is.
 
-This is the authoritative description of what lives in `brain.db`, how the
+This is the authoritative description of what lives in `hera.db`, how the
 connection is opened, how vectors are stored, and how the file-locking
 protocol overflows to `.pending` deltas and merges them back. It describes
 what is: the schema, the constants, the file formats. For why these
@@ -10,10 +10,10 @@ choices were made, follow the ADR links. For how the engines use them,
 see [engines & pipelines](PIPELINES.md).
 
 Every value below is taken from the source. The canonical homes are
-`scripts/brain_db.py` (schema, connection, config defaults, `--init`/`--doctor`),
+`scripts/hera_db.py` (schema, connection, config defaults, `--init`/`--doctor`),
 `scripts/embed.py` (embeddings), and `scripts/locks.py` (locking + deltas).
 
-**If you landed here first:** `brain.db` is a plain SQLite file that *indexes* your Markdown vault — it is rebuildable and never the source of truth for content (the `wiki/` files are). Beyond `page/citation/conflict`, a few terms recur below and are defined in full in [ONBOARDING.md § Glossary](ONBOARDING.md#glossary): **ULID** (a page's permanent id — a Universally Unique Lexicographically Sortable Identifier), **hybrid search** (BM25 keyword + dense-vector ranking fused by RRF), **tier-2 citation** (a wikilink in a final answer that the scorer records), and **pending delta** (a write parked in `.pending/` after losing a lock race). Skim the glossary if any of those are new before reading on.
+**If you landed here first:** `hera.db` is a plain SQLite file that *indexes* your Markdown vault — it is rebuildable and never the source of truth for content (the `wiki/` files are). Beyond `page/citation/conflict`, a few terms recur below and are defined in full in [ONBOARDING.md § Glossary](ONBOARDING.md#glossary): **ULID** (a page's permanent id — a Universally Unique Lexicographically Sortable Identifier), **hybrid search** (BM25 keyword + dense-vector ranking fused by RRF), **tier-2 citation** (a wikilink in a final answer that the scorer records), and **pending delta** (a write parked in `.pending/` after losing a lock race). Skim the glossary if any of those are new before reading on.
 
 ---
 
@@ -118,7 +118,7 @@ connection (`PRAGMA foreign_keys = ON`):
 
 - `pages_vec.page_id` matches `pages.id` by convention.
 - `pages_fts` rowid matches `pages.id`, mediated by a `pages_fts_map(rowid, page_id)`
-  table that is **not defined in `brain_db.py`**. It is created lazily by
+  table that is **not defined in `hera_db.py`**. It is created lazily by
   `scripts/ingest.py` / `scripts/search.py`. Do not expect `--doctor` to
   check for it (see §5).
 
@@ -189,7 +189,7 @@ so a re-init never clobbers a tuned value. Full defaults in §3.
 `pages.pinned` to databases created before that column existed. The v2 step is
 idempotent: the `ALTER TABLE` runs only when `PRAGMA table_info(pages)` shows the
 column is absent (SQLite errors on a duplicate `ADD COLUMN`), and the version row
-is inserted once. Both live in `brain_db.init_schema`.
+is inserted once. Both live in `hera_db.init_schema`.
 
 ### 2.9 `pages_fts`: FTS5 full-text index
 `CREATE VIRTUAL TABLE pages_fts USING fts5(title, body)`. Content-owning
@@ -261,23 +261,23 @@ signature default in `scripts/search.py`.
 
 sqlite-vec is therefore loaded on **every** connection, and extension
 loading is re-disabled immediately after. This is the reason
-[you must never open `brain.db` directly](DECISIONS.md#1-the-hard-invariants-what-never-to-do):
+[you must never open `hera.db` directly](DECISIONS.md#1-the-hard-invariants-what-never-to-do):
 a raw `sqlite3.connect` will not have `vec0` available and any query
-touching `pages_vec` fails. Always go through `brain_db.connect()`.
+touching `pages_vec` fails. Always go through `hera_db.connect()`.
 
 `ensure_ready()` = `connect()` then `init_schema()`. Hooks that only read
 call `connect()`; hooks that may write call `ensure_ready()`.
 
 ### DB file location
 
-`DB_PATH = os.environ.get("BRAIN_DB", REPO / "brain.db")`, where `REPO` is
-derived from `__file__` (two levels up from `scripts/brain_db.py`), i.e.
+`DB_PATH = os.environ.get("HERA_DB", REPO / "hera.db")`, where `REPO` is
+derived from `__file__` (two levels up from `scripts/hera_db.py`), i.e.
 the vault root.
 
-> [!note] `brain_db.py` does **not** read `$SECOND_BRAIN_VAULT`. Its `REPO`
-> comes from the script's own path; the only override is `BRAIN_DB`. The
-> hooks locate the vault via `$SECOND_BRAIN_VAULT` and then import
-> `brain_db` from `<vault>/scripts`, so the two agree in practice, but the
+> [!note] `hera_db.py` does **not** read `$HERA_VAULT`. Its `REPO`
+> comes from the script's own path; the only override is `HERA_DB`. The
+> hooks locate the vault via `$HERA_VAULT` and then import
+> `hera_db` from `<vault>/scripts`, so the two agree in practice, but the
 > module itself is env-var-agnostic. See
 > [global install](GLOBAL_INSTALL.md) for how the vault is located.
 
@@ -304,7 +304,7 @@ FAIL, else 0. Use this as the single health command
 | 5 | Ollama ping | GET `localhost:11434/api/version` unreachable → **WARN** only (injection fail-opens) |
 | 6 | Stale-lock scan | (WARN) `.*.lock` files under `wiki/` older than 10 min |
 | 7 | Orphan deltas | (WARN) `pending_deltas` rows with `merged_at IS NULL` |
-| 8 | Scorer-log freshness | (WARN) `.brain/scorer.log` modified <3600 s ago and non-empty |
+| 8 | Scorer-log freshness | (WARN) `.hera/scorer.log` modified <3600 s ago and non-empty |
 | 9 | Hook registration | (WARN) neither the global `~/.claude/settings.json` (commands referencing this vault) nor the vault-local `.claude/settings.json` registers the hooks |
 
 Checks 5 to 8 are advisory (WARN). Only 1 to 4 can FAIL the doctor. Check 9 is
@@ -313,7 +313,7 @@ WARN-only and **global-install aware**: it first looks in
 references *this* vault — the normal global-install signal — and reports `ok`
 if found; it falls back to the vault-local `.claude/settings.json` for a
 project-local install; otherwise it prints an honest note (a template clone
-whose active brain is a different vault gets "not registered for THIS vault",
+whose active vault is a different one gets "not registered for THIS vault",
 not a bare "no settings.json"). The vault-path match is content-based, never
 `readlink`.
 
@@ -329,7 +329,7 @@ itself always raises on failure.
 | Property | Value |
 |---|---|
 | Endpoint | `OLLAMA_URL`, default `http://localhost:11434` |
-| Model | `BRAIN_EMBED_MODEL`, default `nomic-embed-text` |
+| Model | `HERA_EMBED_MODEL`, default `nomic-embed-text` |
 | Dimensions | `DIM = 768` (matches `pages_vec FLOAT[768]`) |
 | Retries | `3`, backoff `0.5 · 2^i` → 0.5 s, 1 s, 2 s; 30 s timeout |
 | API | POST `/api/embeddings` with `{"model": MODEL, "prompt": text}` |
@@ -342,7 +342,7 @@ it with `struct.unpack("768f", blob)`.
 
 > [!note] `pack` uses the native `f` format (no explicit `<`/`>`), so byte
 > order is platform-dependent. This is fine for a single-user local vault
-> but is a portability constraint if a `brain.db` is ever moved between
+> but is a portability constraint if a `hera.db` is ever moved between
 > architectures.
 
 ---
@@ -350,7 +350,7 @@ it with `struct.unpack("768f", blob)`.
 ## 6. IDs and ULIDs
 
 Page IDs (`pages.id`) are ULIDs, the stable address of a page (ADR-01).
-`brain_db.py` does **not** mint them; `scripts/ingest.py` assigns
+`hera_db.py` does **not** mint them; `scripts/ingest.py` assigns
 `str(ulid.new())` at page construction. `locks.py` also mints a ULID, but
 only for delta filenames (§7), never for page IDs. Because IDs are
 lexicographically time-sortable and never change, citation and conflict
@@ -466,20 +466,20 @@ The function is callable but not wired as a command there.
 
 ---
 
-## 8. team.db: the team-brain index
+## 8. team.db: the team space index
 
 `team.db` is a **separate SQLite file** that indexes teammates' published
-pages for hybrid retrieval. It is not part of `brain.db` and never mingles with
+pages for hybrid retrieval. It is not part of `hera.db` and never mingles with
 it — the isolation is the whole point (see [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-14)).
 
 **Location & override.** `scripts/team_index.py` sets
-`TEAM_DB = os.environ.get("BRAIN_TEAM_DB", REPO / "team.db")`. It is opened with
-`brain_db.connect(TEAM_DB)` — deliberately reusing the personal connection
+`TEAM_DB = os.environ.get("HERA_TEAM_DB", REPO / "team.db")`. It is opened with
+`hera_db.connect(TEAM_DB)` — deliberately reusing the personal connection
 helper so `sqlite-vec` loads and WAL/foreign-keys are on, but pointed at a
-different file. `brain_db.connect()` with no argument still opens the personal
-`brain.db`; only `team_index` passes `TEAM_DB`.
+different file. `hera_db.connect()` with no argument still opens the personal
+`hera.db`; only `team_index` passes `TEAM_DB`.
 
-**Schema.** Identical to `brain.db`'s retrieval core (`pages`, `pages_fts`,
+**Schema.** Identical to `hera.db`'s retrieval core (`pages`, `pages_fts`,
 `pages_vec`, and the lazily-created `pages_fts_map`), built by the same
 `init_schema`, **plus one team-only table**:
 
@@ -488,37 +488,37 @@ page_meta(
   page_id  TEXT PRIMARY KEY REFERENCES pages(id),
   owner    TEXT,   -- publisher, from <owner>/ folder or `owner:` frontmatter
   source   TEXT,   -- source_kind of the published page
-  rel_path TEXT,   -- path under team-brain-staging/
+  rel_path TEXT,   -- path under team-staging/
   mtime    REAL    -- file mtime; drives changed-only reindex
 )
 ```
 
 `page_meta` carries the attribution that a personal page never needs. It is what
 lets `team_hybrid_search` return the `owner` tag on every hit
-(see [ranking](PIPELINES.md#6-team-brain-retrieval-scriptsteam_indexpy-scriptsteam_searchpy)).
+(see [ranking](PIPELINES.md#6-team space-retrieval-scriptsteam_indexpy-scriptsteam_searchpy)).
 
 **Population.** `team_index.reindex(changed_only=True)` walks
-`team-brain-staging/<owner>/`, and for every page with a ULID `id:` upserts
+`team-staging/<owner>/`, and for every page with a ULID `id:` upserts
 `pages`/`pages_fts`/`pages_vec`/`page_meta`; it re-embeds only pages whose
 `mtime` moved and drops rows whose file disappeared. It runs from
 `team_sync.py::_reindex_after_sync()` after a successful pull — embedding cost is
 paid on sync, never per query. A reindex failure never fails the sync.
 
-**By design it holds everyone's pages.** Unlike `brain.db` (your notes only),
+**By design it holds everyone's pages.** Unlike `hera.db` (your notes only),
 `team.db` contains every teammate's published pages, keyed by their publisher
 ULID. That is what makes a teammate's page rank against your query. Because it is
 a distinct file, this never affects your personal ranking, citations, or
 conflicts. `team.db` is runtime state (git-ignored, rebuildable from the staging
-Markdown), exactly like `brain.db`.
+Markdown), exactly like `hera.db`.
 
 ---
 
 ## 9. Known gaps (things not in the storage layer's own files)
 
-These are intentionally out of scope for `brain_db.py` / `locks.py` /
+These are intentionally out of scope for `hera_db.py` / `locks.py` /
 `embed.py`. A maintainer grepping for them should look where noted.
 
-- `pages_fts_map`: created by `ingest.py` / `search.py`, not `brain_db.py`.
+- `pages_fts_map`: created by `ingest.py` / `search.py`, not `hera_db.py`.
 - ULID assignment for pages: done in `ingest.py`.
 - `locks.py --sweep` CLI: function exists, no `__main__` block.
 - Non-append delta merge (`replace_section`, `frontmatter_patch`): declared,

@@ -3,7 +3,7 @@
 # reachable only semantically (no shared literal terms), proving the dense arm
 # is doing the work — not the old word-count scorer.
 set -euo pipefail
-cd "${SECOND_BRAIN_VAULT:?SECOND_BRAIN_VAULT must be set}"
+cd "${HERA_VAULT:?HERA_VAULT must be set}"
 
 PY=.venv/bin/python
 

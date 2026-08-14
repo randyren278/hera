@@ -6,8 +6,8 @@
 # correct pointers as a "stale index", and wastes a search. The fix makes the
 # emitted path resolvable from ANY cwd.
 #
-# This check is hermetic: it builds a scratch vault, stubs search.py + brain_db.py
-# (so no Ollama / real brain.db needed), runs the hook FROM /tmp, extracts the
+# This check is hermetic: it builds a scratch vault, stubs search.py + hera_db.py
+# (so no Ollama / real hera.db needed), runs the hook FROM /tmp, extracts the
 # path token from the pointer line, and asserts a file exists at that path
 # WITHOUT first cd-ing into the vault. Red on current code, green after the fix.
 
@@ -43,10 +43,10 @@ def hybrid_search(conn, query, top_n=3, floor=0.0):
     return [Hit(page_id="P1", title="Probe Page", path="wiki/sources/probe.md")]
 PY
 
-# Stub brain_db.py: connect() returns an object whose .execute() serves the two
+# Stub hera_db.py: connect() returns an object whose .execute() serves the two
 # config rows the hook reads (inject_top_n, inject_relevance_floor) and an empty
 # conflicts result.
-cat > "$VAULT/scripts/brain_db.py" <<'PY'
+cat > "$VAULT/scripts/hera_db.py" <<'PY'
 class _Cur:
     def __init__(self, rows): self._rows = rows
     def fetchone(self): return self._rows[0] if self._rows else None
@@ -60,7 +60,7 @@ class _Conn:
 def connect(*a, **k): return _Conn()
 PY
 
-export SECOND_BRAIN_VAULT="$VAULT"
+export HERA_VAULT="$VAULT"
 
 # Run the hook from a NON-vault cwd, feeding a prompt as JSON on stdin.
 OUT=$(cd /tmp && printf '{"prompt":"what do you know about probe pages and product managers"}' \

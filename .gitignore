@@ -5,13 +5,13 @@ __pycache__/
 .pytest_cache/
 
 # --- Runtime state (per-user, never checked in) ---
-brain.db
-brain.db-wal
-brain.db-shm
+hera.db
+hera.db-wal
+hera.db-shm
 team.db
 team.db-wal
 team.db-shm
-.brain/
+.hera/
 .checkpoints/
 
 # --- Vault runtime scratch ---
@@ -36,8 +36,8 @@ wiki/sources/*
 # superpowers brainstorm scratch (mockups, server state)
 .superpowers/
 
-# --- Team-brain staging (a private clone of the shared repo) ---
-team-brain-staging/
+# --- Team space staging (a private clone of the shared repo) ---
+team-staging/
 
 # --- Maintainer-only, source-repo-local (never ships to clones) ---
 # The repo-role banner ("this repo is the SOURCE/TEMPLATE") is correct only in
@@ -48,7 +48,7 @@ MAINTAINERS.md
 # (links, mermaid fences, team-hybrid consistency, global-mirror). Authoring/CI
 # tooling, not consumer runtime — a note-taking clone has no use for them. Kept
 # local + untracked, same posture as MAINTAINERS.md. (check_team_remote.sh is
-# real runtime — used by /brain-setup — and stays tracked.)
+# real runtime — used by /hera-setup — and stays tracked.)
 scripts/check_doc_links.sh
 scripts/check_mermaid_fences.sh
 scripts/check_docs_consistency.sh

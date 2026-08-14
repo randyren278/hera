@@ -33,9 +33,9 @@ done
 echo "$out" | grep -q '\[dry\]' || { echo "FAIL: --dry-run did not emit [dry] lines"; echo "$out"; exit 1; }
 
 # Must NOT have written to the scratch HOME (except the pre-created .claude dir).
-# Specifically: no second-brain.env, no settings.json, no hooks dir, no skills dir,
+# Specifically: no hera.env, no settings.json, no hooks dir, no skills dir,
 # no global CLAUDE.md.
-for path in "$SCRATCH/.claude/second-brain.env" "$SCRATCH/.claude/settings.json" \
+for path in "$SCRATCH/.claude/hera.env" "$SCRATCH/.claude/settings.json" \
             "$SCRATCH/.claude/hooks" "$SCRATCH/.claude/skills" \
             "$SCRATCH/.claude/CLAUDE.md"; do
   if [ -e "$path" ]; then

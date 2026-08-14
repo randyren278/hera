@@ -19,7 +19,7 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 _VAULT_COPY = [
     "install.py",
     "scripts/install",
-    "scripts/brain_db.py",
+    "scripts/hera_db.py",
     "scripts/locks.py",
     "scripts/embed.py",
     "scripts/search.py",
@@ -69,7 +69,7 @@ def vault_env(tmp_path):
     def run(*args: str) -> subprocess.CompletedProcess:
         env = dict(os.environ)
         env["CLAUDE_HOME"] = str(home)
-        # Skip the real preflight/Ollama by pre-creating brain.db marker: the
+        # Skip the real preflight/Ollama by pre-creating hera.db marker: the
         # venv step sees .venv present (symlink), and we pass --dry-run off but
         # the fixture vault has no preflight.py yet at CP-3 time → install.py
         # prints "(preflight.py not present yet)" and continues.

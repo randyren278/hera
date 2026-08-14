@@ -1,7 +1,7 @@
 """seed_index.py — one-time seed-pack indexer (Phase 3).
 
 Indexes a seed directory (e.g. tests/fixtures/seed-pack) into the personal
-brain index by
+Hera index by
 REUSING the ingest primitives — no LLM rewrite, personal-store only,
 idempotent on the baked ULID.
 
@@ -38,7 +38,7 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 import ingest  # noqa: E402
 import locks  # noqa: E402
 
@@ -111,7 +111,7 @@ def _has_vec_row(conn, page_id: str) -> bool:
 
 
 def seed_index(pack_dir: str, force: bool = False, conn=None) -> dict:
-    """Index every concept/entity page under pack_dir into brain.db.
+    """Index every concept/entity page under pack_dir into hera.db.
 
     Returns a summary dict: {indexed, skipped, pinned, pages[]}.
     """
@@ -122,7 +122,7 @@ def seed_index(pack_dir: str, force: bool = False, conn=None) -> dict:
         raise SystemExit(f"seed_index: pack dir not found: {pack}")
 
     if conn is None:
-        conn = brain_db.ensure_ready()
+        conn = hera_db.ensure_ready()
 
     indexed = skipped = pinned_count = 0
     seen: list[str] = []
@@ -188,7 +188,7 @@ def seed_index(pack_dir: str, force: bool = False, conn=None) -> dict:
 
 
 def _cli() -> int:
-    ap = argparse.ArgumentParser(description="Index a seed pack into brain.db")
+    ap = argparse.ArgumentParser(description="Index a seed pack into hera.db")
     ap.add_argument("pack_dir",
                     help="seed pack directory (e.g. tests/fixtures/seed-pack)")
     ap.add_argument("--force", action="store_true",

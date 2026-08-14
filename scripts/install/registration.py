@@ -2,12 +2,12 @@
 
 A3: skills must be available in every directory, and Claude Code discovers
 global skills from ``~/.claude/skills/``. We drop the symlink mirror and instead
-**copy** each ``brain-*`` skill dir there (static markdown + assets, no live-edit
+**copy** each ``hera-*`` skill dir there (static markdown + assets, no live-edit
 requirement). Copies need no admin/Developer-Mode on Windows and create no
 symlink at all.
 
 Uninstall reverses this **by content, not by readlink**: install records the
-skill dirs it created in a manifest (``~/.claude/.brain-manifest``, JSON), and
+skill dirs it created in a manifest (``~/.claude/.hera-manifest``, JSON), and
 uninstall removes exactly those. A skill dir that predates us (not in the
 manifest, or a non-managed non-empty dir) is never clobbered or removed.
 """
@@ -17,7 +17,7 @@ import json
 import pathlib
 import shutil
 
-MANIFEST_NAME = ".brain-manifest"
+MANIFEST_NAME = ".hera-manifest"
 
 
 def _manifest_path(home: pathlib.Path) -> pathlib.Path:
@@ -42,7 +42,7 @@ def _save_manifest(home: pathlib.Path, data: dict) -> None:
 
 def register_skills(vault: pathlib.Path, skills_dir: pathlib.Path,
                     skill_dirs: list[str], home: pathlib.Path) -> list[str]:
-    """Copy each ``brain-*`` skill dir from the vault into ``skills_dir``.
+    """Copy each ``hera-*`` skill dir from the vault into ``skills_dir``.
 
     Refuses to overwrite a non-managed directory (one we didn't create per the
     manifest). Records created dirs in the manifest for clean uninstall.

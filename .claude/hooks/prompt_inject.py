@@ -22,7 +22,7 @@ import re
 import sys
 
 
-_env_vault = os.environ.get("SECOND_BRAIN_VAULT")
+_env_vault = os.environ.get("HERA_VAULT")
 REPO = pathlib.Path(_env_vault).resolve() if _env_vault else pathlib.Path(__file__).resolve().parents[2]
 
 
@@ -52,17 +52,17 @@ def _load_prompt() -> str:
             or "")
 
 
-def _brain_off() -> bool:
-    v = os.environ.get("SECOND_BRAIN_OFF", "").strip().lower()
+def _hera_off() -> bool:
+    v = os.environ.get("HERA_OFF", "").strip().lower()
     return v not in ("", "0", "false", "no", "off")
 
 
 def main() -> int:
-    if _brain_off():
+    if _hera_off():
         return 0
     try:
         # --no-ollama override for e2e tests: simulate Ollama being unreachable.
-        if os.environ.get("BRAIN_INJECT_NO_OLLAMA") == "1":
+        if os.environ.get("HERA_INJECT_NO_OLLAMA") == "1":
             # Fail-open: emit nothing, exit 0.
             return 0
 
@@ -74,10 +74,10 @@ def main() -> int:
             return 0
 
         sys.path.insert(0, str(REPO / "scripts"))
-        import brain_db  # type: ignore
+        import hera_db  # type: ignore
         import search as _search  # type: ignore
 
-        conn = brain_db.connect()
+        conn = hera_db.connect()
         top_n = int(conn.execute(
             "SELECT value FROM config WHERE key='inject_top_n'"
         ).fetchone()[0])
@@ -90,7 +90,7 @@ def main() -> int:
         # Team side: same hybrid substrate over team.db, owner-tagged. Its own
         # try/except so a broken team.db / dead Ollama degrades to local-only
         # (the outer except is the final backstop). Team pages never enter
-        # brain.db — they live in a separate index (isolation invariant).
+        # hera.db — they live in a separate index (isolation invariant).
         team_hits: list = []
         try:
             import team_index  # type: ignore
@@ -136,7 +136,7 @@ def main() -> int:
             # cwd under the global install; a bare vault-relative path can't be
             # resolved from a non-vault cwd, and an agent that fails to open it
             # wrongly concludes the index is stale. The absolute path resolves
-            # everywhere. Team paths are repo-relative under team-brain-staging/,
+            # everywhere. Team paths are repo-relative under team-staging/,
             # so REPO / path resolves them too.
             abs_path = (REPO / m["path"]).as_posix()
             tag = f" (team: {m['owner']})" if m["owner"] else ""

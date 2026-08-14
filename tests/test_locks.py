@@ -10,19 +10,19 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-import brain_db  # noqa: E402
+import hera_db  # noqa: E402
 import locks  # noqa: E402
 
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    """Isolated wiki + brain.db under tmp_path."""
+    """Isolated wiki + hera.db under tmp_path."""
     wiki = tmp_path / "wiki"
     (wiki / "concepts").mkdir(parents=True)
     (wiki / ".pending").mkdir()
-    db_path = tmp_path / "brain.db"
-    monkeypatch.setattr(brain_db, "DB_PATH", db_path)
-    conn = brain_db.ensure_ready(db_path)
+    db_path = tmp_path / "hera.db"
+    monkeypatch.setattr(hera_db, "DB_PATH", db_path)
+    conn = hera_db.ensure_ready(db_path)
     # Seed one page so foreign keys on pending_deltas.page_id are satisfied.
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     conn.execute(

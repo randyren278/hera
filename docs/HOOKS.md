@@ -1,6 +1,6 @@
 # HOOKS: the four Claude Code hooks
 
-> Reference · for maintainers · assumes you know what the Second Brain is (see [ARCHITECTURE.md](ARCHITECTURE.md)) and have read [CLAUDE.md](../CLAUDE.md).
+> Reference · for maintainers · assumes you know what the Hera is (see [ARCHITECTURE.md](ARCHITECTURE.md)) and have read [CLAUDE.md](../CLAUDE.md).
 
 **In one paragraph:** Claude Code lets you register scripts that fire on session events. This vault registers four of them — one when a session starts, one on every prompt you submit, one when the assistant finishes a turn, one when the session ends — and they are the *only* code that runs without you asking. Together they are the automatic half of the vault: they surface relevant notes into your context, score which notes you actually cite, and file each session back into the vault. This doc is the reference for exactly what each one does and how it is wired; read it when you need to change hook behavior or debug why a hook did (or didn't) fire.
 
@@ -28,7 +28,7 @@ sequenceDiagram
   actor U as User
   participant CC as Claude Code
   participant H as hooks/*.py
-  participant DB as brain.db
+  participant DB as hera.db
   participant TDB as team.db
   U->>CC: start / resume session
   CC->>H: SessionStart → session_start.py (sync)
@@ -47,7 +47,7 @@ sequenceDiagram
   H->>DB: file transcript as source_kind=session
 ```
 
-| Claude Code event | Hook script | Sync/async | Timeout | Writes `brain.db`? |
+| Claude Code event | Hook script | Sync/async | Timeout | Writes `hera.db`? |
 |---|---|---|---|---|
 | `SessionStart` | `session_start.py` | sync | none set | no (read-only) |
 | `UserPromptSubmit` | `prompt_inject.py` | sync | 10 s | no (read-only) |
@@ -66,19 +66,19 @@ designed so that failure is invisible and harmless.
 Every hook resolves the vault root the same way, verbatim:
 
 ```python
-_env_vault = os.environ.get("SECOND_BRAIN_VAULT")
+_env_vault = os.environ.get("HERA_VAULT")
 REPO = pathlib.Path(_env_vault).resolve() if _env_vault else pathlib.Path(__file__).resolve().parents[2]
 ```
 
-- **Primary:** `$SECOND_BRAIN_VAULT` (set by the global install via
-  `~/.claude/second-brain.env`), resolved to an absolute path.
+- **Primary:** `$HERA_VAULT` (set by the global install via
+  `~/.claude/hera.env`), resolved to an absolute path.
 - **Fallback:** `pathlib.Path(__file__).resolve().parents[2]`, from
   `.claude/hooks/<file>.py`, up three levels to the vault root. This is the
   project-local path where the env var is absent.
 
 All four then push `str(REPO / "scripts")` onto `sys.path` before importing
-`brain_db`, `search`, or `ingest`. The sync hooks call `brain_db.connect()`;
-the async hooks call `brain_db.ensure_ready()`.
+`hera_db`, `search`, or `ingest`. The sync hooks call `hera_db.connect()`;
+the async hooks call `hera_db.ensure_ready()`.
 
 > Never hard-code a vault path. Doing so breaks global mode and can silently
 > point a machine at the wrong vault. See [CLAUDE.md](../CLAUDE.md) "What NEVER
@@ -86,14 +86,14 @@ the async hooks call `brain_db.ensure_ready()`.
 
 ---
 
-## 2a. The `SECOND_BRAIN_OFF` kill switch (identical in all four hooks)
+## 2a. The `HERA_OFF` kill switch (identical in all four hooks)
 
-Setting `SECOND_BRAIN_OFF` in a session's environment disables the entire
+Setting `HERA_OFF` in a session's environment disables the entire
 automatic loop for that session — no context injection, no citation scoring,
 no session filing, no session-start output. Launch a dark session with:
 
 ```
-SECOND_BRAIN_OFF=1 claude
+HERA_OFF=1 claude
 ```
 
 Each hook's `main()` begins with the same guard, checked **before** its
@@ -101,13 +101,13 @@ Each hook's `main()` begins with the same guard, checked **before** its
 fork, no log line):
 
 ```python
-def _brain_off() -> bool:
-    v = os.environ.get("SECOND_BRAIN_OFF", "").strip().lower()
+def _hera_off() -> bool:
+    v = os.environ.get("HERA_OFF", "").strip().lower()
     return v not in ("", "0", "false", "no", "off")
 
 
 def main() -> int:
-    if _brain_off():
+    if _hera_off():
         return 0
     ...
 ```
@@ -119,8 +119,8 @@ def main() -> int:
 This is a deliberate, user-driven opt-out, distinct from the fail-open silence
 each hook already has (§4–§7): fail-open swallows *errors*; this switch is an
 *intentional* off. It is a runtime env var, so it is not written to
-`~/.claude/second-brain.env` and needs no reinstall — scope it to one session,
-or `export` it in a shell where you never want the brain active. It is the
+`~/.claude/hera.env` and needs no reinstall — scope it to one session,
+or `export` it in a shell where you never want Hera active. It is the
 sanctioned way to quiet the loop; do not disable a hook by editing
 `settings.json` (see [CLAUDE.md](../CLAUDE.md) "What NEVER to do" #6).
 
@@ -139,15 +139,15 @@ relies on the `parents[2]` fallback for vault location:
 ```
 
 **Global** (`scripts/install/settings_fragment.json`, 1059 bytes), sources the
-locator first so `$SECOND_BRAIN_VAULT` is exported before the vault's `.venv`
+locator first so `$HERA_VAULT` is exported before the vault's `.venv`
 python runs the symlinked hook under `~/.claude/hooks/`:
 
 ```
-. "$HOME/.claude/second-brain.env" && "$SECOND_BRAIN_VAULT/.venv/bin/python" "$HOME/.claude/hooks/<hook>.py"
+. "$HOME/.claude/hera.env" && "$HERA_VAULT/.venv/bin/python" "$HOME/.claude/hooks/<hook>.py"
 ```
 
-The leading `.` **dot-sources** `~/.claude/second-brain.env`, which contains a
-single `export SECOND_BRAIN_VAULT="<abs>"` line (plus two comment lines). This
+The leading `.` **dot-sources** `~/.claude/hera.env`, which contains a
+single `export HERA_VAULT="<abs>"` line (plus two comment lines). This
 runs before the venv python, so the exported var is present in the hook's
 environment. Because the command begins by sourcing the locator, the hook works
 from any (foreign) working directory. The locator file is written by
@@ -169,12 +169,12 @@ from any (foreign) working directory. The locator file is written by
   1. **hot cache:** the full contents of `wiki/hot.md` (rstripped). If missing,
      emits a literal `# Recent Context` placeholder noting that the vault is
      empty and no hot cache exists yet.
-  2. **origin-scoped open conflicts:** via `brain_db.connect()`, queries
+  2. **origin-scoped open conflicts:** via `hera_db.connect()`, queries
      `conflicts JOIN pages` where
      `status='open' AND (origin_cwd = <cwd> OR origin_cwd IS NULL)`. Emits a
      header "## Open conflicts from this project (please raise with the user
      immediately)", then per conflict the `[[title]]`, `existing:` and `new:`
-     claims, and a pointer to `/brain-conflicts`. Separately counts conflicts
+     claims, and a pointer to `/hera-conflicts`. Separately counts conflicts
      **elsewhere** (`origin_cwd IS NOT NULL AND origin_cwd != <cwd>`) and emits a
      one-line count. This is the origin-scoped surfacing channel. See
      [DECISIONS.md](DECISIONS.md) (ADR-10).
@@ -196,19 +196,19 @@ from any (foreign) working directory. The locator file is written by
   treats the raw text as the prompt (test tolerance).
 - **Output (stdout):** a pointer block, or nothing.
 - **Behavior:**
-  - Early silent exit if `BRAIN_INJECT_NO_OLLAMA == "1"` (test override
+  - Early silent exit if `HERA_INJECT_NO_OLLAMA == "1"` (test override
     simulating Ollama down).
   - Silent if the prompt is empty or `len < 4`.
   - Silent if the prompt matches `CODING_RE`, a heuristic that skips pure
     coding/syntax questions (e.g. "how do i … git/npm/docker…", "write a
     function/regex…", "fix/debug this…").
-  - Otherwise: `brain_db.connect()`, reads `inject_top_n` and
+  - Otherwise: `hera_db.connect()`, reads `inject_top_n` and
     `inject_relevance_floor` from the `config` table, then calls
     `search.hybrid_search(conn, prompt, top_n=..., floor=...)`. No hits → silent.
   - **Injects** a block headed "Relevant vault pages (pointers only, read the
     file if needed):", one bullet per hit in the form
     `- [[Title]]  (abspath)` followed by the first content line, where `abspath`
-    is the **absolute** path under `$SECOND_BRAIN_VAULT` (`REPO / h.path`), not
+    is the **absolute** path under `$HERA_VAULT` (`REPO / h.path`), not
     the bare vault-relative `h.path`. Hooks run from any cwd under the global
     install; a relative path can't be resolved from a non-vault cwd, and an
     agent that fails to open it wrongly concludes the index is stale. The
@@ -220,15 +220,15 @@ from any (foreign) working directory. The locator file is written by
     appends a `⚠ contested` line naming `existing: <claim_old>`,
     `new: <claim_new>`, and `unresolved.` under the relevant hit. This is the unscoped, relevance-triggered
     surfacing channel. See [DECISIONS.md](DECISIONS.md) (ADR-10).
-  - **Team-brain fusion:** after the local `hybrid_search`, the hook also runs
+  - **Team space fusion:** after the local `hybrid_search`, the hook also runs
     `search.team_hybrid_search` over the separate `team.db` in **its own**
     `try/except`, then merges those owner-tagged team hits with the local hits by
     the same RRF score (one scale) before taking `top_n`. Team pointers are
     tagged ` (team: <owner>)`. Team pages are indexed only in `team.db` and never
-    enter `brain.db` (isolation invariant — [ADR-14](DECISIONS.md#2-adr-log-01-14) / rule #9 in [CLAUDE.md](../CLAUDE.md) "What NEVER to do"); the nested
+    enter `hera.db` (isolation invariant — [ADR-14](DECISIONS.md#2-adr-log-01-14) / rule #9 in [CLAUDE.md](../CLAUDE.md) "What NEVER to do"); the nested
     try/except means a missing `team.db` or a down embedder degrades to
     local-only and never breaks injection. See [RETRIEVAL.md § local ↔ team](RETRIEVAL.md#4-how-data-flows-local-team)
-    and [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team-brain-index).
+    and [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team space-index).
 - **Fail-open:** the entire body is wrapped in `try/except Exception: pass`.
   **Always returns 0.** Any failure (Ollama down, DB missing, config rows absent)
   prints nothing. This is the make-or-break invariant: injection must degrade to
@@ -243,11 +243,11 @@ For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`), see
 
 - **Event:** `Stop`. **Async (`async: true`), timeout 120 s.**
 - **Input (stdin):** event JSON. Uses `evt["transcript_path"]` (fallback env
-  `BRAIN_TRANSCRIPT`) and `evt["session_id"]` (fallback env `BRAIN_SESSION_ID`,
+  `HERA_TRANSCRIPT`) and `evt["session_id"]` (fallback env `HERA_SESSION_ID`,
   else `"unknown"`).
 - **Output:** no stdout for Claude. Side effects: inserts `citations` rows in
-  `brain.db`; appends a line to the scorer log at `$BRAIN_SCORER_LOG` or
-  `REPO/.brain/scorer.log`.
+  `hera.db`; appends a line to the scorer log at `$HERA_SCORER_LOG` or
+  `REPO/.hera/scorer.log`.
 - **What it scans for (tier 2, "final", the only active tier):** two regexes
   over the assistant's final-message text:
   - `SOURCE_RE` matches canonical `(Source: [[Title]])`.
@@ -274,7 +274,7 @@ For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`), see
 - **Fail-open:** `main()` wraps everything in `try/except`; on error it writes
   `"scorer error:\n" + traceback` to the log but **returns 0** and never raises.
   A missing/nonexistent `transcript_path` logs and returns 0. Uses
-  `brain_db.ensure_ready()`.
+  `hera_db.ensure_ready()`.
 
 > [!important]
 > Your final-answer wikilinks become scored citations that shift the vault's
@@ -286,21 +286,21 @@ For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`), see
 ## 7. `session_end_file.py`: SessionEnd (session filing)
 
 - **Event:** `SessionEnd`. **Async (`async: true`), timeout 600 s.**
-- **Input (stdin):** event JSON → `transcript_path` (fallback `BRAIN_TRANSCRIPT`)
-  and `session_id` (fallback `BRAIN_SESSION_ID`, else `"unknown"`). Also supports
+- **Input (stdin):** event JSON → `transcript_path` (fallback `HERA_TRANSCRIPT`)
+  and `session_id` (fallback `HERA_SESSION_ID`, else `"unknown"`). Also supports
   a **CLI mode** `session_end_file.py <transcript> <session_id>`, which is how the
   forked worker re-enters.
-- **Output:** no stdout for Claude. Side effects: writes `.brain/session-<id>.md`,
-  ingests it, and appends to the filing log at `$BRAIN_FILING_LOG` or
-  `REPO/.brain/filing.log`.
-- **Async dispatch:** if `BRAIN_FILING_SYNC == "1"` it runs inline (for tests).
+- **Output:** no stdout for Claude. Side effects: writes `.hera/session-<id>.md`,
+  ingests it, and appends to the filing log at `$HERA_FILING_LOG` or
+  `REPO/.hera/filing.log`.
+- **Async dispatch:** if `HERA_FILING_SYNC == "1"` it runs inline (for tests).
   Otherwise it is **fire-and-forget**: `subprocess.Popen([...python, __file__,
   transcript_path, session_id], stdout/stderr=DEVNULL, start_new_session=True)`
   detaches a background worker and the hook returns immediately.
 - **What it distills:** builds a plain-text doc (header + walked transcript,
   extracting `role` + text per message; string content as `[role] <content>`,
   list content collecting only `type == "text"` blocks, tool_use noise dropped),
-  writes it to `REPO/.brain/session-<id>.md`, then calls
+  writes it to `REPO/.hera/session-<id>.md`, then calls
   `ingest.ingest_source(..., source_kind="session")`.
 - **Idempotency (`filed_sessions` table):** `_already_filed` checks
   `SELECT filed_at FROM filed_sessions WHERE session_id = ?`; if a row exists,
@@ -312,7 +312,7 @@ For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`), see
   `"hook error:\n"+traceback` and **return 0**. Inside `run_filing`, missing
   transcript, flatten exception, or ingest exception each log and return 1, but
   those non-zero returns are only surfaced in sync/CLI mode. The async hook never
-  blocks the session. Uses `brain_db.ensure_ready()`.
+  blocks the session. Uses `hera_db.ensure_ready()`.
 
 Session-source ingest is where explicit user statements auto-resolve contradictions
 as `resolved_new`. See [DECISIONS.md](DECISIONS.md) (ADR-11).

@@ -32,16 +32,16 @@ report() {
 mkdir -p "$SCRATCH/.claude"
 HOME="$SCRATCH" bash install.sh > /dev/null
 
-test -f "$SCRATCH/.claude/second-brain.env"; report "install: locator present" $?
+test -f "$SCRATCH/.claude/hera.env"; report "install: locator present" $?
 test -L "$SCRATCH/.claude/hooks/session_start.py"; report "install: hooks symlinked" $?
-test -L "$SCRATCH/.claude/skills/brain-ingest"; report "install: skills symlinked" $?
+test -L "$SCRATCH/.claude/skills/hera-ingest"; report "install: skills symlinked" $?
 test -f "$SCRATCH/.claude/settings.json"; report "install: settings.json created" $?
 
 HOME="$SCRATCH" bash install.sh --uninstall > /dev/null
 
-test ! -e "$SCRATCH/.claude/second-brain.env"; report "uninstall: locator removed" $?
+test ! -e "$SCRATCH/.claude/hera.env"; report "uninstall: locator removed" $?
 test ! -e "$SCRATCH/.claude/hooks/session_start.py"; report "uninstall: hook symlink removed" $?
-test ! -e "$SCRATCH/.claude/skills/brain-ingest"; report "uninstall: skill symlink removed" $?
+test ! -e "$SCRATCH/.claude/skills/hera-ingest"; report "uninstall: skill symlink removed" $?
 # No pre-install backup → settings.json should be removed (was ours only).
 test ! -e "$SCRATCH/.claude/settings.json"; report "uninstall: settings.json removed (no prior backup)" $?
 
@@ -82,7 +82,7 @@ report "uninstall: preserves unrelated hooks after restore" $?
 # --- Case C: re-install then uninstall (polluted-backup regression) ------
 # Install twice, uninstall once. Before the skip-backup fix, the second
 # install clobbered the newest backup with a merged (polluted) copy, and
-# uninstall restored it — leaving all four second-brain hooks behind.
+# uninstall restored it — leaving all four Hera hooks behind.
 rm -rf "$SCRATCH/.claude"
 mkdir -p "$SCRATCH/.claude"
 cat > "$SCRATCH/.claude/settings.json" <<'JSON'
@@ -102,35 +102,35 @@ HOME="$SCRATCH" bash install.sh --uninstall > /dev/null
 
 test -f "$SCRATCH/.claude/settings.json"; \
   report "uninstall(2x): settings.json kept (user hook present)" $?
-if grep -q "second-brain.env" "$SCRATCH/.claude/settings.json" 2>/dev/null; then
-  report "uninstall(2x): no second-brain hooks remain" 1
+if grep -q "hera.env" "$SCRATCH/.claude/settings.json" 2>/dev/null; then
+  report "uninstall(2x): no Hera hooks remain" 1
 else
-  report "uninstall(2x): no second-brain hooks remain" 0
+  report "uninstall(2x): no Hera hooks remain" 0
 fi
 grep -q "preserved-c" "$SCRATCH/.claude/settings.json" 2>/dev/null; \
   report "uninstall(2x): preserves user's PreToolUse hook" $?
 
 # --- Case D: re-install preserves the team remote (regression) -----------
-# The locator rewrites second-brain.env on every install. Before the fix it
-# rewrote the file from scratch, wiping the SECOND_BRAIN_TEAM_REMOTE line that
-# /brain-setup appends. A re-install must keep it; only uninstall removes it.
+# The locator rewrites hera.env on every install. Before the fix it
+# rewrote the file from scratch, wiping the HERA_TEAM_REMOTE line that
+# /hera-setup appends. A re-install must keep it; only uninstall removes it.
 rm -rf "$SCRATCH/.claude"
 mkdir -p "$SCRATCH/.claude"
 
 HOME="$SCRATCH" bash install.sh > /dev/null
-# Simulate /brain-setup persisting the remote beside the vault line.
-echo 'export SECOND_BRAIN_TEAM_REMOTE="https://example.test/team.git"' \
-  >> "$SCRATCH/.claude/second-brain.env"
+# Simulate /hera-setup persisting the remote beside the vault line.
+echo 'export HERA_TEAM_REMOTE="https://example.test/team.git"' \
+  >> "$SCRATCH/.claude/hera.env"
 
 HOME="$SCRATCH" bash install.sh > /dev/null
 
-grep -q 'SECOND_BRAIN_TEAM_REMOTE=.*example.test' "$SCRATCH/.claude/second-brain.env"; \
+grep -q 'HERA_TEAM_REMOTE=.*example.test' "$SCRATCH/.claude/hera.env"; \
   report "reinstall: team remote preserved" $?
-[ "$(grep -c '^export SECOND_BRAIN_VAULT=' "$SCRATCH/.claude/second-brain.env")" -eq 1 ]; \
+[ "$(grep -c '^export HERA_VAULT=' "$SCRATCH/.claude/hera.env")" -eq 1 ]; \
   report "reinstall: vault line not duplicated" $?
 
 HOME="$SCRATCH" bash install.sh --uninstall > /dev/null
-test ! -e "$SCRATCH/.claude/second-brain.env"; \
+test ! -e "$SCRATCH/.claude/hera.env"; \
   report "uninstall: env (incl. remote) removed" $?
 
 echo

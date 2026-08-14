@@ -8,8 +8,8 @@ statement auto-resolution.
 Contract:
   - Idempotent per session_id (filed_sessions bookkeeping table).
   - Async by default: the hook forks a background worker and returns fast.
-  - Sync mode for tests: env var BRAIN_FILING_SYNC=1 forces inline execution.
-  - Logs to ~/.brain/filing.log.
+  - Sync mode for tests: env var HERA_FILING_SYNC=1 forces inline execution.
+  - Logs to ~/.hera/filing.log.
 
 The filing "job" itself is `.venv/bin/python -m filing_worker <transcript> <session_id>`
 which we implement here as a module-level function `run_filing(...)` — same
@@ -26,9 +26,9 @@ import time
 import traceback
 
 
-_env_vault = os.environ.get("SECOND_BRAIN_VAULT")
+_env_vault = os.environ.get("HERA_VAULT")
 REPO = pathlib.Path(_env_vault).resolve() if _env_vault else pathlib.Path(__file__).resolve().parents[2]
-FILING_LOG = pathlib.Path(os.environ.get("BRAIN_FILING_LOG", REPO / ".brain" / "filing.log"))
+FILING_LOG = pathlib.Path(os.environ.get("HERA_FILING_LOG", REPO / ".hera" / "filing.log"))
 
 
 def _log(msg: str) -> None:
@@ -59,10 +59,10 @@ def _mark_filed(conn, session_id: str) -> None:
 def run_filing(transcript_path: str, session_id: str) -> int:
     """Run the actual filing. Returns 0 on success, non-zero on error."""
     sys.path.insert(0, str(REPO / "scripts"))
-    import brain_db  # type: ignore
+    import hera_db  # type: ignore
     import ingest  # type: ignore
 
-    conn = brain_db.ensure_ready()
+    conn = hera_db.ensure_ready()
     if _already_filed(conn, session_id):
         _log(f"session {session_id} already filed — skipping")
         return 0
@@ -102,9 +102,9 @@ def run_filing(transcript_path: str, session_id: str) -> int:
         _log("transcript flatten error:\n" + traceback.format_exc())
         return 1
 
-    # Write the distilled transcript to .brain/session-<id>.md so ingest has a real
+    # Write the distilled transcript to .hera/session-<id>.md so ingest has a real
     # file to point at (and to preserve as raw source).
-    scratch = REPO / ".brain" / f"session-{session_id}.md"
+    scratch = REPO / ".hera" / f"session-{session_id}.md"
     scratch.parent.mkdir(parents=True, exist_ok=True)
     scratch.write_text("\n\n".join(parts), encoding="utf-8")
 
@@ -129,13 +129,13 @@ def _read_event() -> dict:
         return {}
 
 
-def _brain_off() -> bool:
-    v = os.environ.get("SECOND_BRAIN_OFF", "").strip().lower()
+def _hera_off() -> bool:
+    v = os.environ.get("HERA_OFF", "").strip().lower()
     return v not in ("", "0", "false", "no", "off")
 
 
 def main() -> int:
-    if _brain_off():
+    if _hera_off():
         return 0
     try:
         # CLI mode: `session_end_file.py <transcript> <session_id>`
@@ -144,13 +144,13 @@ def main() -> int:
 
         # Hook mode: read event JSON from stdin.
         evt = _read_event()
-        transcript_path = evt.get("transcript_path") or os.environ.get("BRAIN_TRANSCRIPT")
-        session_id = evt.get("session_id") or os.environ.get("BRAIN_SESSION_ID") or "unknown"
+        transcript_path = evt.get("transcript_path") or os.environ.get("HERA_TRANSCRIPT")
+        session_id = evt.get("session_id") or os.environ.get("HERA_SESSION_ID") or "unknown"
         if not transcript_path:
             _log("no transcript_path in event; skipping")
             return 0
 
-        if os.environ.get("BRAIN_FILING_SYNC") == "1":
+        if os.environ.get("HERA_FILING_SYNC") == "1":
             return run_filing(transcript_path, session_id)
 
         # Fire-and-forget: fork a detached background worker, per-OS.
