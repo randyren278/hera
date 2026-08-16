@@ -304,6 +304,10 @@ class PageWrite:
     path: pathlib.Path
     body_md: str
     aliases: list[str] = field(default_factory=list)
+    # Trust tier (design §5.1). 'self' is correct for everything the operator
+    # ingests by hand; a sense that pulls in email or web content passes
+    # trust='untrusted' so the page can never reach a privileged session.
+    trust: str = "self"
 
 
 @dataclass
@@ -343,7 +347,7 @@ def _frontmatter(page_id: str, title: str, type_: str, extra: dict | None = None
         if isinstance(v, str):
             # A handful of "identifier-shaped" keys are safe (and expected by
             # tooling) to emit unquoted: visibility, source_kind, etc.
-            if k in ("visibility", "source_kind", "owner") and re.match(r"^[a-z][\w-]*$", v):
+            if k in ("visibility", "source_kind", "owner", "trust") and re.match(r"^[a-z][\w-]*$", v):
                 lines.append(f"{k}: {v}")
             else:
                 lines.append(f'{k}: "{v}"')
@@ -403,14 +407,21 @@ def _call_claude_extract(raw: str) -> dict:
 # ---------- DB writes ----------
 
 def _upsert_page(conn, pw: PageWrite):
+    if pw.trust not in hera_db.TRUST_TIERS:
+        # The column's CHECK would reject this anyway; raising here names the
+        # offending page instead of surfacing a bare IntegrityError.
+        raise ValueError(
+            f"invalid trust tier {pw.trust!r} on page {pw.title!r}; "
+            f"expected one of {hera_db.TRUST_TIERS}")
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     conn.execute(
-        "INSERT INTO pages(id, title, aliases, type, path, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "INSERT INTO pages(id, title, aliases, type, path, created_at, updated_at, trust) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(id) DO UPDATE SET "
-        "  title=excluded.title, aliases=excluded.aliases, path=excluded.path, updated_at=excluded.updated_at",
+        "  title=excluded.title, aliases=excluded.aliases, path=excluded.path, "
+        "  updated_at=excluded.updated_at, trust=excluded.trust",
         (pw.id, pw.title, json.dumps(pw.aliases), pw.type,
-         pw.path.relative_to(REPO).as_posix(), now, now),
+         pw.path.relative_to(REPO).as_posix(), now, now, pw.trust),
     )
 
 
@@ -446,6 +457,9 @@ def _index_page_search(conn, pw: PageWrite):
 
 
 def _write_page_file(conn, pw: PageWrite, extra_fm: dict | None = None):
+    # Every page carries its tier on disk, not just in the DB — a reindex from
+    # the markdown must not silently promote an untrusted page to 'self'.
+    extra_fm = {**(extra_fm or {}), "trust": pw.trust}
     pw.path.parent.mkdir(parents=True, exist_ok=True)
     with locks.lock(pw.path, page_id=pw.id, conn=conn,
                     intent="append", delta_body="") as acq:
@@ -551,13 +565,22 @@ def _update_log(conn, result: Result, raw_path: pathlib.Path | None = None) -> N
 
 def ingest_source(source_path: str, source_kind: str = "file",
                   raw_dir: pathlib.Path | None = None,
-                  conn=None) -> Result:
+                  conn=None, trust: str = "self") -> Result:
     """Ingest a single source. Returns a Result. Writes to disk + DB.
 
     source_path — path to the source file (already fetched/cleaned).
     source_kind — file | url | image | session
     raw_dir     — where to preserve the raw source; default wiki/.raw/articles/
+    trust       — self | team | untrusted (design §5.1). Defaults to 'self',
+                  which is right for an operator-initiated ingest. A caller
+                  handling content the operator did not author (email, web,
+                  tool output) MUST pass trust='untrusted'; every page the run
+                  produces then inherits that tier, and hybrid_search /
+                  prompt_inject will refuse to surface them.
     """
+    if trust not in hera_db.TRUST_TIERS:
+        raise ValueError(f"invalid trust tier {trust!r}; "
+                         f"expected one of {hera_db.TRUST_TIERS}")
     src = pathlib.Path(source_path).resolve()
     raw = _read_text_or_die(src)
     if conn is None:
@@ -585,6 +608,7 @@ def ingest_source(source_path: str, source_kind: str = "file",
             "## Summary",
             data["source"].get("body", "") or "",
         ]),
+        trust=trust,
     )
 
     concepts = [PageWrite(
@@ -594,6 +618,7 @@ def ingest_source(source_path: str, source_kind: str = "file",
         path=WIKI / "concepts" / f"{_slugify(c['title'])}.md",
         body_md=(f"> [!info] {c.get('one_line','')}\n\n" + c.get("body", "")),
         aliases=c.get("aliases", []) or [],
+        trust=trust,
     ) for c in data.get("concepts", []) or []]
 
     entities = [PageWrite(
@@ -603,6 +628,7 @@ def ingest_source(source_path: str, source_kind: str = "file",
         path=WIKI / "entities" / f"{_slugify(e['title'])}.md",
         body_md=(f"> [!info] ({e.get('kind','')}) {e.get('one_line','')}\n\n" + e.get("body", "")),
         aliases=e.get("aliases", []) or [],
+        trust=trust,
     ) for e in data.get("entities", []) or []]
 
     # Write source page with source-specific frontmatter (§4.2)
@@ -741,9 +767,12 @@ def _cli() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("source", help="path to source file")
     ap.add_argument("--kind", default="file")
+    ap.add_argument("--trust", default="self", choices=list(hera_db.TRUST_TIERS),
+                    help="trust tier for every page this run creates (design §5.1). "
+                         "Use 'untrusted' for content the operator did not author.")
     ap.add_argument("--json", action="store_true", help="emit machine-readable summary")
     a = ap.parse_args()
-    r = ingest_source(a.source, source_kind=a.kind)
+    r = ingest_source(a.source, source_kind=a.kind, trust=a.trust)
     summary = {
         "source": {"id": r.source.id, "title": r.source.title,
                    "path": r.source.path.relative_to(REPO).as_posix()},

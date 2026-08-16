@@ -12,6 +12,16 @@ session (design §8.2, R-6).
 
 CP-5 will extend this to append a ⚠ contested warning for any retrieved
 page with an open conflict.
+
+Trust (design §5.1): what this hook emits is phrased as fact and lands inside
+a privileged session, so the tier gate here is a security boundary, not a
+relevance knob. Only INJECT_TRUST tiers may ever be emitted. The gate is
+applied three times on purpose — at the search call, again on the merged list,
+and once more per line as the pointer is formatted — because a single missed
+check is a memory-poisoning hole, and each layer is cheap.
+
+Note that "fail-open" describes the OUTPUT (print nothing on error), never the
+FILTER: an error while establishing a page's tier withholds the page.
 """
 from __future__ import annotations
 
@@ -35,6 +45,11 @@ CODING_PATTERNS = [
     r"^\s*(fix|debug)\s+(this|the|my)\b",
 ]
 CODING_RE = re.compile("|".join(CODING_PATTERNS), re.I)
+
+# The only tiers this hook may surface into a privileged session. Named here
+# rather than taken from search.DEFAULT_TRUST so that widening the search
+# default can never silently widen what gets injected.
+INJECT_TRUST = ("self", "team")
 
 
 def _load_prompt() -> str:
@@ -85,7 +100,8 @@ def main() -> int:
             "SELECT value FROM config WHERE key='inject_relevance_floor'"
         ).fetchone()[0])
 
-        hits = _search.hybrid_search(conn, prompt, top_n=top_n, floor=floor)
+        hits = _search.hybrid_search(conn, prompt, top_n=top_n, floor=floor,
+                                     trust_in=INJECT_TRUST)
 
         # Team side: same hybrid substrate over team.db, owner-tagged. Its own
         # try/except so a broken team.db / dead Ollama degrades to local-only
@@ -96,7 +112,8 @@ def main() -> int:
             import team_index  # type: ignore
             tconn = team_index.open_team_db()
             team_hits = _search.team_hybrid_search(tconn, prompt, top_n=top_n,
-                                                    floor=floor)
+                                                    floor=floor,
+                                                    trust_in=INJECT_TRUST)
         except Exception:
             team_hits = []
 
@@ -105,11 +122,18 @@ def main() -> int:
         merged: list[dict] = []
         for h in hits:
             merged.append({"title": h.title, "path": h.path,
-                           "page_id": h.page_id, "score": h.score, "owner": None})
+                           "page_id": h.page_id, "score": h.score, "owner": None,
+                           "trust": getattr(h, "trust", "untrusted")})
         for t in team_hits:
+            # Everything in team.db is team-tier by construction (ADR-14).
             merged.append({"title": t["title"], "path": t["path"],
                            "page_id": t["page_id"], "score": t["score"],
-                           "owner": t.get("owner")})
+                           "owner": t.get("owner"), "trust": "team"})
+
+        # Second gate. hybrid_search already filtered, but this list is the one
+        # that becomes text in a privileged session, so it is re-checked here
+        # rather than trusted.
+        merged = [m for m in merged if m["trust"] in INJECT_TRUST]
         if not merged:
             return 0
         merged.sort(key=lambda m: (-m["score"], m["title"]))
@@ -139,10 +163,22 @@ def main() -> int:
             # everywhere. Team paths are repo-relative under team-staging/,
             # so REPO / path resolves them too.
             abs_path = (REPO / m["path"]).as_posix()
-            tag = f" (team: {m['owner']})" if m["owner"] else ""
-            lines.append(f"- [[{m['title']}]]  ({abs_path})  — {one_line}{tag}")
+            # Third gate — nothing becomes a line without its tier re-checked.
+            if m["trust"] not in INJECT_TRUST:
+                continue
+            # Team-tier pointers are delimited with their attribution FIRST, so
+            # the provenance of a page someone else wrote is read before its
+            # content, not discovered at the end of the line.
+            if m["trust"] == "team":
+                attribution = f"(team: {m['owner']}) " if m["owner"] else "(team) "
+            else:
+                attribution = ""
+            lines.append(
+                f"- {attribution}[[{m['title']}]]  ({abs_path})  — {one_line}")
             for co, cn in conflicts_by_page.get(m["page_id"], []):
                 lines.append(f"    ⚠ contested — existing: {co} · new: {cn} · unresolved.")
+        if len(lines) == 1:
+            return 0  # header only — every candidate was gated out.
         sys.stdout.write("\n".join(lines) + "\n")
     except Exception:
         # Fail-open: swallow everything.

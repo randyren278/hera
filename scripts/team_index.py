@@ -114,12 +114,15 @@ def _index_page(conn, path: pathlib.Path) -> str | None:
     mtime = path.stat().st_mtime
     now = hera_db.time.strftime("%Y-%m-%dT%H:%M:%S")
 
-    # pages row (upsert by id).
+    # pages row (upsert by id). Everything indexed here came out of the team
+    # staging clone, so its trust tier is 'team' by construction — never 'self'
+    # (which is what hera_db's column default would otherwise leave behind).
     conn.execute(
-        "INSERT INTO pages(id, title, aliases, type, path, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "INSERT INTO pages(id, title, aliases, type, path, created_at, updated_at, trust) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 'team') "
         "ON CONFLICT(id) DO UPDATE SET title=excluded.title, aliases=excluded.aliases, "
-        "type=excluded.type, path=excluded.path, updated_at=excluded.updated_at",
+        "type=excluded.type, path=excluded.path, updated_at=excluded.updated_at, "
+        "trust=excluded.trust",
         (pid, title, aliases, type_, rel_path, now, now),
     )
 

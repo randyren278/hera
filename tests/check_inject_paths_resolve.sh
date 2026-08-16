@@ -39,7 +39,9 @@ class Hit:
     title: str
     path: str
     score: float = 1.0
-def hybrid_search(conn, query, top_n=3, floor=0.0):
+    trust: str = "self"
+DEFAULT_TRUST = ("self", "team")
+def hybrid_search(conn, query, top_n=3, floor=0.0, **kwargs):
     return [Hit(page_id="P1", title="Probe Page", path="wiki/sources/probe.md")]
 PY
 

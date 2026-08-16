@@ -34,6 +34,14 @@ SCORER_LOG = pathlib.Path(os.environ.get("HERA_SCORER_LOG", REPO / ".hera" / "sc
 WIKI = REPO / "wiki"
 SETTINGS = REPO / ".claude" / "settings.json"
 
+# Trust tiers (design §5.1). `self` = operator-authored, `team` = a teammate's
+# published page, `untrusted` = anything derived from content the operator did
+# not write (email, web, a tool's output). Only `self` and `team` may ever be
+# injected into a privileged session — see search.hybrid_search(trust_in=...)
+# and .claude/hooks/prompt_inject.py.
+TRUST_TIERS = ("self", "team", "untrusted")
+TRUSTED_TIERS = ("self", "team")
+
 SCHEMA = [
     # Canonical page registry (title→ID resolution lives here)
     """CREATE TABLE IF NOT EXISTS pages (
@@ -45,7 +53,9 @@ SCHEMA = [
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL,
         archived_at TEXT,
-        pinned      INTEGER NOT NULL DEFAULT 0
+        pinned      INTEGER NOT NULL DEFAULT 0,
+        trust       TEXT NOT NULL DEFAULT 'self'
+                    CHECK (trust IN ('self','team','untrusted'))
     )""",
     "CREATE INDEX IF NOT EXISTS idx_pages_title ON pages(title)",
 
@@ -160,6 +170,19 @@ def init_schema(conn: sqlite3.Connection) -> None:
         row = conn.execute("SELECT 1 FROM schema_version WHERE version = 2").fetchone()
         if not row:
             conn.execute("INSERT INTO schema_version(version, applied_at) VALUES (2, ?)",
+                         (time.strftime("%Y-%m-%dT%H:%M:%S"),))
+        # Migration v3: add pages.trust to existing DBs. Same idempotence
+        # pattern as v2. The NOT NULL DEFAULT 'self' backfills every existing
+        # row in one statement — everything already in a vault was written by
+        # the operator, so 'self' is the correct historical tier. sqlite 3.53.3
+        # accepts (and enforces) the CHECK on ADD COLUMN; verified at CP-2.1.
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(pages)")}
+        if "trust" not in cols:
+            conn.execute("ALTER TABLE pages ADD COLUMN trust TEXT NOT NULL "
+                         "DEFAULT 'self' CHECK (trust IN ('self','team','untrusted'))")
+        row = conn.execute("SELECT 1 FROM schema_version WHERE version = 3").fetchone()
+        if not row:
+            conn.execute("INSERT INTO schema_version(version, applied_at) VALUES (3, ?)",
                          (time.strftime("%Y-%m-%dT%H:%M:%S"),))
         # Seed defaults for any missing config keys — never overwrite.
         for k, v in DEFAULT_CONFIG.items():
