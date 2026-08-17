@@ -2,7 +2,9 @@
 # e2e_inject_team.sh — CP-3: prompt_inject fuses team + local pages into ONE
 # ranked block, with team lines owner-tagged.
 set -euo pipefail
-cd "${HERA_VAULT:?HERA_VAULT must be set}"
+# Vault locator: $HERA_VAULT if exported, else self-locate from this script
+# (scripts/ -> vault). Same contract as hera_cli.py and every hook.
+cd "${HERA_VAULT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
 PY=.venv/bin/python
 

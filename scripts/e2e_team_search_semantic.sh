@@ -3,7 +3,9 @@
 # reachable only semantically (no shared literal terms), proving the dense arm
 # is doing the work — not the old word-count scorer.
 set -euo pipefail
-cd "${HERA_VAULT:?HERA_VAULT must be set}"
+# Vault locator: $HERA_VAULT if exported, else self-locate from this script
+# (scripts/ -> vault). Same contract as hera_cli.py and every hook.
+cd "${HERA_VAULT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
 PY=.venv/bin/python
 
