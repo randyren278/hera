@@ -12,7 +12,7 @@ protocol implemented in `scripts/locks.py` (§6, ADR-02) — the ingest engine
 imports `locks.py` directly, so nothing here needs to open lockfiles itself.
 
 > **Vault location.** This skill requires the vault root, written by
-> `install.py` into `~/.claude/hera.env` as `HERA_VAULT`.
+> `install.py` into `~/.claude/hera.env` (Claude Code) or `~/.codex/hera.env` (Codex) as `HERA_VAULT`.
 > If unset, error: `HERA_VAULT is not set — run python install.py from
 > the vault directory first.`
 
@@ -23,9 +23,12 @@ venv interpreter for the running OS, and re-execs the engine. Run it as:
     python "<VAULT>/scripts/hera_cli.py" <engine> [args...]
 
 replacing `<VAULT>` with the absolute path from `HERA_VAULT` (read the
-one-line locator `~/.claude/hera.env`). This works identically on
+one-line locator `~/.claude/hera.env` (Claude Code) or `~/.codex/hera.env` (Codex)). This works identically on
 Windows (cmd.exe/PowerShell) and POSIX — no shell sourcing, no venv-path
 hardcode.
+
+In Codex, set `HERA_LLM_BACKEND=codex` in the engine command environment.
+The Codex SessionEnd hook sets it automatically for session notes.
 
 ## Triggers
 
@@ -39,13 +42,13 @@ hardcode.
 1. **Discuss the source with the user briefly.** Ask "how granular?" and "any
    emphasis?" unless the user said "just ingest it" or the caller is a
    background job (SessionEnd filing).
-2. **Fetch/clean.** For URLs, use WebFetch; if `defuddle` is installed (`which
+2. **Fetch/clean.** For URLs, use the available web fetch tool; if `defuddle` is installed (`which
    defuddle`), pipe through it. Save the cleaned raw source to
    `<VAULT>/wiki/.raw/articles/`. For images, extract description +
    OCR text natively and copy the image to `<VAULT>/wiki/.raw/images/`.
 3. **Delegate to the engine.** Invoke
    `python "<VAULT>/scripts/hera_cli.py" ingest <path> --kind file|url|image --json`.
-   This runs the extraction (an isolated `claude -p` call with a strict JSON schema),
+   This runs the extraction (Claude Code uses isolated `claude -p`; Codex uses isolated `codex exec` with `HERA_LLM_BACKEND=codex`),
    writes the source/concept/entity pages through the locking protocol in
    `scripts/locks.py`, upserts `pages`/`pages_fts`/`pages_vec` rows, and updates
    `wiki/hot.md`, `wiki/index.md`, `wiki/log.md`.

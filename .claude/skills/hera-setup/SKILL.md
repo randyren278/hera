@@ -8,7 +8,7 @@ description: One-shot installer for a fresh clone of the Hera repo — scaffolds
 Clone-and-go installer for the Hera. Run once after cloning the repo.
 
 > **Vault location.** This skill requires the vault root, written by
-> `install.py` into `~/.claude/hera.env` as `HERA_VAULT`.
+> `install.py` into `~/.claude/hera.env` (Claude Code) or `~/.codex/hera.env` (Codex) as `HERA_VAULT`.
 > If unset, error: `HERA_VAULT is not set — run python install.py from
 > the vault directory first.`
 
@@ -19,7 +19,7 @@ interpreter for the running OS, and re-execs the engine. Run it as:
     python "<VAULT>/scripts/hera_cli.py" <engine> [args...]
 
 replacing `<VAULT>` with the absolute path from `HERA_VAULT` (the one-line
-locator `~/.claude/hera.env`). This skill is the installer, so on a
+locator `~/.claude/hera.env` (Claude Code) or `~/.codex/hera.env` (Codex)). This skill is the installer, so on a
 *fresh* clone the locator may not exist yet — read it if present, otherwise run
 from the vault directory you cloned; `python install.py` creates the locator.
 
@@ -67,7 +67,7 @@ from the vault directory you cloned; `python install.py` creates the locator.
      your git auth resolves (an empty repo with no refs still counts as
      reachable). On failure, show the error and re-prompt for a URL, or let
      the user skip team setup. On success, persist the remote per-machine by
-     appending (or replacing) this line in `~/.claude/hera.env`,
+     appending (or replacing) this line in `~/.claude/hera.env` (Claude Code) or `~/.codex/hera.env` (Codex),
      beside the existing `HERA_VAULT` (plain `KEY=VALUE`, no `export`):
 
      ```

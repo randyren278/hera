@@ -19,6 +19,7 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 _VAULT_COPY = [
     "install.py",
     "scripts/install",
+    "scripts/codex_hook.py",
     "scripts/hera_db.py",
     "scripts/locks.py",
     "scripts/embed.py",
@@ -29,6 +30,7 @@ _VAULT_COPY = [
     ".claude/skills",
     ".claude/hooks",
     "CLAUDE.md",
+    "AGENTS.md",
 ]
 
 
@@ -65,10 +67,12 @@ def vault_env(tmp_path):
     proj.write_text('{"hooks":{}}\n', encoding="utf-8")
 
     home = tmp_path / "claude_home"
+    codex_home = tmp_path / "codex_home"
 
     def run(*args: str) -> subprocess.CompletedProcess:
         env = dict(os.environ)
         env["CLAUDE_HOME"] = str(home)
+        env["CODEX_HOME"] = str(codex_home)
         # Skip the real preflight/Ollama by pre-creating hera.db marker: the
         # venv step sees .venv present (symlink), and we pass --dry-run off but
         # the fixture vault has no preflight.py yet at CP-3 time → install.py
@@ -79,7 +83,7 @@ def vault_env(tmp_path):
             cwd=str(vault),
         )
 
-    yield {"vault": vault, "home": home, "run": run, "proj": proj}
+    yield {"vault": vault, "home": home, "codex_home": codex_home, "run": run, "proj": proj}
 
 
 def count_symlinks(root: pathlib.Path) -> list[pathlib.Path]:

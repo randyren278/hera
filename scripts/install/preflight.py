@@ -169,7 +169,8 @@ def run_preflight(vault: pathlib.Path | None = None, verbose: bool = False) -> i
     run("ollama-daemon", _check_ollama_daemon)
     run("nomic-embed-text", _check_nomic_present)
     run("embed-endpoint", _check_embed_endpoint)
-    run("claude-code", lambda: (shutil.which("claude") is not None, "not on PATH"))
+    run("agent-cli", lambda: (shutil.which("claude") is not None or shutil.which("codex") is not None,
+                              "neither claude nor codex on PATH"))
 
     _emit_ollama_remedies(status)
 

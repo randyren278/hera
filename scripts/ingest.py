@@ -79,6 +79,17 @@ CLAUDE_ISOLATION = [
 CLAUDE_CWD = tempfile.gettempdir()
 
 
+def _model_command() -> list[str]:
+    """Use the selected local agent for extraction without nested Hera hooks."""
+    backend = os.environ.get("HERA_LLM_BACKEND", "claude").lower()
+    if backend == "codex":
+        binary = os.environ.get("CODEX_BIN") or shutil.which("codex") or "codex"
+        return [binary, "exec", "--ephemeral", "--skip-git-repo-check",
+                "--sandbox", "read-only", "-c", "features.hooks=false", "-"]
+    return [CLAUDE_BIN, "-p", *CLAUDE_ISOLATION,
+            "--output-format", "text", "--model", CLAUDE_MODEL]
+
+
 EXPLICIT_STATEMENT_PROMPT = """\
 You are checking whether a user made an EXPLICIT statement of a specific fact
 inside a chat transcript. Explicit means: the user said the fact directly, in
@@ -106,8 +117,7 @@ def _user_stated_explicitly(transcript_text: str, claim: str) -> tuple[bool, str
         claim=claim[:1000],
         transcript=transcript_text[:20000],
     )
-    cmd = [CLAUDE_BIN, "-p", *CLAUDE_ISOLATION,
-           "--output-format", "text", "--model", CLAUDE_MODEL]
+    cmd = _model_command()
     try:
         r = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
                            timeout=300, cwd=CLAUDE_CWD)   # _user_stated_explicitly
@@ -170,8 +180,7 @@ def _detect_contradiction(old_body: str, new_body: str) -> dict | None:
     """Call Claude to compare old vs new. Returns a dict with verdict/claim_old/claim_new
     or None on error. Called once per page that already exists in the vault."""
     prompt = CONTRADICTION_PROMPT.format(old=old_body[:8000], new=new_body[:8000])
-    cmd = [CLAUDE_BIN, "-p", *CLAUDE_ISOLATION,
-           "--output-format", "text", "--model", CLAUDE_MODEL]
+    cmd = _model_command()
     try:
         r = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
                            timeout=300, cwd=CLAUDE_CWD)   # _detect_contradiction
@@ -365,8 +374,7 @@ def _call_claude_extract(raw: str) -> dict:
     cwd=CLAUDE_CWD keeps this vault's CLAUDE.md out of the prompt.
     """
     prompt = EXTRACTION_PROMPT.format(raw=raw[:200_000])  # generous cap
-    cmd = [CLAUDE_BIN, "-p", *CLAUDE_ISOLATION,
-           "--output-format", "text", "--model", CLAUDE_MODEL]
+    cmd = _model_command()
     try:
         r = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
                            timeout=600, cwd=CLAUDE_CWD)   # _call_claude_extract

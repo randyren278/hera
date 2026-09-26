@@ -80,8 +80,7 @@ PRIVATE PAGE:
 def _strip_body(body: str) -> str | None:
     """Return stripped markdown, or None to skip this page entirely."""
     prompt = STRIP_PROMPT.format(body=body[:20000])
-    cmd = [CLAUDE_BIN, "-p", *CLAUDE_ISOLATION,
-           "--output-format", "text", "--model", CLAUDE_MODEL]
+    cmd = _ingest._model_command()
     try:
         r = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
                            timeout=600, cwd=CLAUDE_CWD)

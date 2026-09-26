@@ -5,7 +5,7 @@
 <h1 align="center">Hera</h1>
 
 <p align="center">
-  <em>A note vault your Claude Code sessions actually <b>use</b>, not an archive you re-read.</em>
+  <em>A note vault your Claude Code and Codex sessions actually <b>use</b>.</em>
 </p>
 
 <p align="center">
@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/SQLite-FTS5%20+%20vec-003B57?logo=sqlite&logoColor=white" alt="sqlite">
   <img src="https://img.shields.io/badge/embeddings-Ollama-000000" alt="ollama">
   <img src="https://img.shields.io/badge/runs%20in-Claude%20Code-D97757" alt="claude code">
+  <img src="https://img.shields.io/badge/runs%20in-Codex-000000" alt="codex">
   <img src="https://img.shields.io/badge/license-yours-2ea043" alt="license">
 </p>
 
@@ -26,9 +27,10 @@
 Most note systems are write-only. You capture diligently, and then the notes
 sit there — a library you keep meaning to revisit.
 
-Hera reverses that. Every session with Claude Code is ingested automatically.
+Hera reverses that. Sessions with Claude Code or Codex are ingested automatically
+after their hooks are enabled.
 On your next session, the pages that matter are pulled into context *before*
-Claude answers. Pages that earn citations float; pages that never do sink and
+the agent answers. Pages that earn citations float; pages that never do sink and
 are eventually archived. You don't curate it — using it is what curates it.
 
 Named for the goddess whose sacred bird carries a hundred eyes: the point is
@@ -40,9 +42,9 @@ SQLite file — FTS5 for keyword search,
 fused with Reciprocal Rank Fusion. Embeddings are generated locally by
 [Ollama](https://ollama.com/) running `nomic-embed-text`.
 
-No hosted service ever sees your notes. The only network calls are to the
-Claude API you're already paying for and, if you opt in, a git remote you
-choose.
+Your notes stay in the local vault. Extraction sends source text to the
+selected Claude or Codex model; an optional team remote receives only pages
+you explicitly publish.
 
 ---
 
@@ -53,11 +55,11 @@ choose.
   IDs, and files them under `wiki/`. Contradictions with existing pages are
   detected and surfaced as conflicts rather than silently overwritten.
 - **Recall.** Every prompt you send triggers a hybrid search over the vault.
-  Top-N relevant pages are injected as pointers before Claude sees your
+  Top-N relevant pages are injected as pointers before the agent sees your
   question — and if a team space is configured, matching team pages are fused
   in on the same scale, tagged with who published them. If a retrieved page is
   contested, the injection flags it.
-- **Score.** When Claude finishes a turn, every `[[wikilink]]` and
+- **Score.** When the agent finishes a turn, every `[[wikilink]]` and
   `(Source: [[Title]])` in the final answer becomes a citation record.
   This is the feedback loop: what you actually use is what survives.
 - **File sessions.** When your session ends, the transcript is distilled
@@ -95,7 +97,7 @@ choose.
     the Microsoft Store Python** — that build ships without extension loading
     and the `sqlite-vec` index won't load. The macOS **python.org** build also
     lacks it; use Homebrew there.
-- Claude Code 2.1+ (Hera is designed to run *inside* Claude Code)
+- Claude Code 2.1+ or Codex CLI
 - Windows 10/11, macOS, or Linux (native — no WSL/Git-Bash required)
 
 You do **not** need to install Ollama first. `install.py` detects a missing or
@@ -114,9 +116,9 @@ cd ~/hera
 #    prompts "install Ollama now? [Y/n]" — press Enter to accept.
 python install.py
 
-# 3. Launch Claude Code from ANY directory and finish scaffolding.
-#    Then, inside Claude Code, run: /hera-setup
-claude
+# 3. Launch Claude Code or Codex from ANY directory and finish scaffolding.
+#    Then run the hera-setup skill.
+claude  # or: codex
 ```
 
 Ollama flags for `install.py`: pass `--install-ollama` to install/start it
@@ -125,17 +127,21 @@ without prompting (useful in scripts or when running non-interactively), or
 to run yourself. With no flag, an interactive run asks (default yes) and a
 non-interactive run proceeds.
 
-The `python install.py` step is what makes Hera **global**. It **copies** the
-`hera-*` skills into `~/.claude/skills/` (static markdown — a copy needs no
-admin/Developer-Mode on Windows and creates no symlink), registers the four
-hooks by writing **absolute, in-repo command strings** into your user-level
-`~/.claude/settings.json` (preserving anything already there, with a
-timestamped backup), and writes `~/.claude/hera.env` so the hooks and skills
-can locate the vault via `HERA_VAULT`. **No symlinks are created** — the hook
-command strings point straight at the vault's `.claude/hooks/` scripts, so an
-edit to a hook takes effect immediately with no mirror to refresh.
+The `python install.py` step makes Hera global in both clients. On macOS and
+Linux it symlinks the same `hera-*` skill source into `~/.claude/skills/` and
+`~/.codex/skills/`; Windows uses managed copies because symlinks may require
+extra privileges. Claude hooks are registered in `~/.claude/settings.json` and
+Codex hooks in `~/.codex/hooks.json`. Hook commands run scripts directly from
+the vault. `~/.codex/hera.env` links to the Claude locator, and a managed block
+in the existing `~/.codex/AGENTS.md` points to linked Hera guidance.
 
-After that, launching `claude` from any directory injects vault context,
+Codex requires a one-time review of new or changed user hooks. Restart Codex,
+open `/hooks`, and trust the Hera hooks to enable automatic retrieval, citation
+scoring, and session filing. Codex filing uses isolated `codex exec` for note
+extraction; set `HERA_LLM_BACKEND=codex` for manual ingest and publish commands
+run from Codex.
+
+After that, launching either client from any directory injects vault context,
 ingests the session on exit, and lets you invoke `/hera-ingest`,
 `/hera-conflicts`, `/hera-prune`, and the rest from anywhere. The vault's own
 project-local `.claude/settings.json` is renamed to `.disabled` to prevent
@@ -174,13 +180,13 @@ python install.py --uninstall --dry-run   # preview exactly what will be removed
 python install.py --uninstall             # happy with the preview? run it
 ```
 
-It removes the copied `hera-*` skills it created (tracked in a manifest so it
+It removes the linked `hera-*` skills it created (tracked in a manifest so it
 only ever deletes its own), restores `~/.claude/settings.json` from the backup
 taken at install time (or strips just our hook entries if no backup existed),
-deletes `~/.claude/hera.env`, re-enables the vault's project-local
+deletes `~/.claude/hera.env`, removes Codex's managed hooks and links, re-enables the vault's project-local
 `.claude/settings.json`, and strips the optional Hera block from
 `~/.claude/CLAUDE.md` if it was added. It's safe by construction: the
-uninstaller reverses everything **by content** (never by `readlink`), and
+uninstaller reverses only its managed entries and links, and
 refuses to remove a skill dir it didn't create. Your `wiki/`, `hera.db`, and
 the repo itself are never touched.
 
@@ -194,7 +200,7 @@ the repo itself are never touched.
   path, `pathlib.Path(__file__).resolve()` yields the vault root directly.
   `HERA_VAULT` overrides this if set, letting you point one machine at a
   different vault by editing `~/.claude/hera.env`.
-- **Skills** are **copied** into `~/.claude/skills/` (not symlinked). Every
+- **Skills** are linked into both clients' global skill directories on POSIX. Every
   engine command they name goes through `scripts/hera_cli.py`, which resolves
   the per-OS venv interpreter and re-execs the engine — one invocation shape on
   every OS.
@@ -209,11 +215,11 @@ the repo itself are never touched.
 
 Once installed, the loop runs without you:
 
-- **Start a Claude Code session.** `wiki/hot.md` and any origin-scoped open
+- **Start a Claude Code or Codex session.** `wiki/hot.md` and any origin-scoped open
   conflicts are injected into context.
 - **Ask a coding question.** Hybrid search finds relevant pages, and pointers
-  are injected before Claude answers.
-- **Claude cites a page.** The citation is recorded on Stop.
+  are injected before the agent answers.
+- **The agent cites a page.** The citation is recorded on Stop.
 - **Session ends.** The transcript is distilled and ingested as a new source
   page.
 

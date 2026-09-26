@@ -1,19 +1,18 @@
-"""registration.py — copy skills into ~/.claude/skills (no symlinks) + reverse.
+"""Register Hera skills from one vault source in either agent's skills directory.
 
-A3: skills must be available in every directory, and Claude Code discovers
-global skills from ``~/.claude/skills/``. We drop the symlink mirror and instead
-**copy** each ``hera-*`` skill dir there (static markdown + assets, no live-edit
-requirement). Copies need no admin/Developer-Mode on Windows and create no
-symlink at all.
+A3: skills must be available in every directory. POSIX registrations point at
+the vault's canonical ``SKILL.md`` source; Windows uses copies because symlink
+creation can require extra privileges.
 
-Uninstall reverses this **by content, not by readlink**: install records the
-skill dirs it created in a manifest (``~/.claude/.hera-manifest``, JSON), and
+Uninstall reverses this by ownership: install records the
+skill dirs it created in a manifest (one per client), and
 uninstall removes exactly those. A skill dir that predates us (not in the
 manifest, or a non-managed non-empty dir) is never clobbered or removed.
 """
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import shutil
 
@@ -41,13 +40,14 @@ def _save_manifest(home: pathlib.Path, data: dict) -> None:
 
 
 def register_skills(vault: pathlib.Path, skills_dir: pathlib.Path,
-                    skill_dirs: list[str], home: pathlib.Path) -> list[str]:
-    """Copy each ``hera-*`` skill dir from the vault into ``skills_dir``.
+                    skill_dirs: list[str], home: pathlib.Path,
+                    os_name: str | None = None) -> list[str]:
+    """Link skills on POSIX; copy on Windows where symlinks need privileges.
 
     Refuses to overwrite a non-managed directory (one we didn't create per the
     manifest). Records created dirs in the manifest for clean uninstall.
     Returns the list of skill names registered. Idempotent: a dir we own is
-    refreshed (removed + re-copied); a foreign dir raises RuntimeError.
+    refreshed; a foreign dir raises RuntimeError.
     """
     vault = pathlib.Path(vault)
     skills_dir = pathlib.Path(skills_dir)
@@ -61,17 +61,20 @@ def register_skills(vault: pathlib.Path, skills_dir: pathlib.Path,
         if not src.is_dir():
             raise RuntimeError(f"register_skills: source skill missing: {src}")
         dst = skills_dir / name
-        if dst.exists():
-            if name not in owned and not dst.is_symlink():
+        if dst.exists() or dst.is_symlink():
+            if name not in owned:
                 # A real, pre-existing dir we don't own — never clobber.
                 raise RuntimeError(
                     f"register_skills: refusing to overwrite non-managed dir: {dst}")
-            # Ours (or a stale symlink from a prior install) — refresh cleanly.
+            # Ours — refresh cleanly.
             if dst.is_symlink() or dst.is_file():
                 dst.unlink()
             else:
                 shutil.rmtree(dst)
-        shutil.copytree(src, dst)
+        if (os_name or os.name) == "nt":
+            shutil.copytree(src, dst)
+        else:
+            dst.symlink_to(src, target_is_directory=True)
         owned.add(name)
         registered.append(name)
 

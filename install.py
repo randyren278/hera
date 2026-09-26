@@ -256,14 +256,19 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
         settings_mod.merge_settings(global_settings, fragment)
         ui.info("merged.")
 
-    # Step 5: register skills by COPYING into ~/.claude/skills/ (no symlinks).
-    ui.step(f"step 5/7: copy skills into {global_skills}")
+    # Step 5: register skills from one canonical source in both agents.
+    ui.step(f"step 5/7: link skills into {global_skills}")
     if dry:
         for s in SKILL_DIRS:
-            ui.info(f"[dry] copy .claude/skills/{s} → {global_skills / s}")
+            ui.info(f"[dry] link .claude/skills/{s} → {global_skills / s}")
     else:
         import registration
         registration.register_skills(VAULT, global_skills, SKILL_DIRS, home)
+    if dry:
+        ui.info("[dry] register Codex skills, hooks, locator, and guidance")
+    else:
+        import codex
+        codex.install(VAULT, SKILL_DIRS, loc_env)
 
     # Step 6: disable project-local settings.json so hooks don't double-fire.
     ui.step("step 6/7: disable project-local settings.json")
@@ -288,7 +293,7 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
 
     print()
     ui.plain("install: complete.")
-    ui.info("Restart Claude Code, then run /hera-setup to finish vault scaffolding.")
+    ui.info("Restart Claude Code or Codex, review Codex hooks with /hooks, then run /hera-setup.")
     ui.info(f"To undo: python {VAULT / 'install.py'} --uninstall")
     return 0
 
@@ -315,6 +320,12 @@ def do_uninstall(dry: bool) -> int:
     project_disabled = project_settings.with_suffix(".json.disabled")
     global_md = home / "CLAUDE.md"
     r = Runner(dry)
+
+    if dry:
+        ui.info("[dry] unregister Codex skills, hooks, locator, and guidance")
+    else:
+        import codex
+        codex.uninstall(VAULT)
 
     ui.header("Hera - uninstaller", {
         "vault": str(VAULT),

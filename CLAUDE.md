@@ -40,7 +40,7 @@ becomes a scored citation that shifts the vault's ranking. Cite things
 that were actually useful. Do not sprinkle wikilinks decoratively.
 
 **Where they live after global install.** The hooks run **in-repo** — there is
-no `~/.claude/hooks/` mirror and no symlink anywhere. `install.py` writes an
+no `~/.claude/hooks/` mirror. `install.py` writes an
 absolute command string into `~/.claude/settings.json` pointing straight at the
 vault:
 
@@ -59,10 +59,9 @@ Each hook's `REPO` variable prefers `$HERA_VAULT` (from
 is already correct. Edits to hook source in the vault take effect immediately —
 no reinstall needed, the same benefit a symlink would have given.
 
-Skills are **copied** into `~/.claude/skills/hera-*`, not linked; uninstall
-reverses that by content via the `~/.claude/.hera-manifest` record. Rationale
-in [docs/GLOBAL_INSTALL.md](docs/GLOBAL_INSTALL.md) §"Why copies + in-repo hooks,
-not symlinks"; enforced by `tests/test_no_symlink.py`.
+Skills are linked into `~/.claude/skills/hera-*` and `~/.codex/skills/hera-*`
+on POSIX, with Windows copies as a fallback. Both clients use the same vault
+source; uninstall follows each client's ownership manifest.
 
 ---
 
@@ -195,10 +194,10 @@ publish" / "search the team space" → `/hera-team retrieve`.
   `"<vault>/.venv/bin/python" "<vault>/.claude/hooks/<hook>.py"` pair. There is
   **no** `~/.claude/hooks/` directory — if you are looking for one, that is the
   bug in your mental model, not the install.
-- `~/.claude/skills/hera-*` — real directories **copied** from the vault (not
-  links), recorded in `~/.claude/.hera-manifest`
+- `~/.claude/skills/hera-*` and `~/.codex/skills/hera-*` — links to the
+  same vault skills on POSIX, recorded in each client's `.hera-manifest`
 - `~/.claude/settings.json.hera-backup.*` — pre-install backups; use
-  `install.sh --uninstall` to restore
+  `python install.py --uninstall` to restore
 - `docs/GLOBAL_INSTALL.md` — global-install architecture reference
 - `docs/ARCHITECTURE.md` — system-level map and "where to look when it breaks"
 - `docs/DECISIONS.md` — the ADRs and the "never do this" invariants

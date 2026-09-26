@@ -3,10 +3,10 @@
 **Why this exists:** by default the vault's hooks and skills only work when Claude Code is running *inside* the vault directory. "Global install" is the one-time step that makes them work in **any** directory — so Hera keeps surfacing notes and scoring citations while you work in unrelated projects — without copying the vault around. The trick is that everything is wired with an absolute path back to the single canonical vault on disk. This doc explains how that wiring works, why it's shaped this way, and where to look when it misbehaves; read it when you're installing, uninstalling, or debugging a hook that won't fire from a foreign directory.
 
 `install.py` at the vault root converts a fresh clone into a globally
-available Hera: hooks fire in every Claude Code session, the
+available Hera: hooks fire in Claude Code and Codex sessions, the
 `hera-*` skills are invokable from any directory, and everything
 still points back at the one canonical vault on disk. It runs on Windows,
-macOS, and Linux — no symlinks, no bash.
+macOS, and Linux — POSIX skills use symlinks, while Windows uses copies.
 
 This doc explains the pieces, why each is shaped the way it is, and
 where to look if something misbehaves.
@@ -34,11 +34,11 @@ where to look if something misbehaves.
    root. Editing hook source takes effect immediately; there is no mirror to
    refresh and no symlink to dangle.
 
-3. **`~/.claude/skills/hera-*`** — real **copies** of the vault's
-   `<vault>/.claude/skills/hera-*` directories (skills are static markdown; a
-   copy needs no admin/Developer-Mode on Windows and creates no symlink).
+3. **`~/.claude/skills/hera-*` and `~/.codex/skills/hera-*`** — symlinks to the
+   same `<vault>/.claude/skills/hera-*` directories on POSIX. Windows uses
+   copies because symlinks can need Developer Mode or elevation.
    `install.py` tracks the dirs it created in a manifest
-   (`~/.claude/.hera-manifest`) so uninstall removes exactly those and never a
+   (one `.hera-manifest` per client) so uninstall removes exactly those and never a
    dir it didn't create. Each `SKILL.md` invokes engines through
    `scripts/hera_cli.py`, which resolves the per-OS venv interpreter, so a user
    in any CWD ends up talking to the same `.venv/` and the same `hera.db`.
@@ -50,17 +50,32 @@ where to look if something misbehaves.
    `&&`, no `$VAR`). The merge deduplicates by command string, so re-running
    `install.py` is a no-op on already-installed machines.
 
-## Why copies + in-repo hooks, not symlinks
+## Why linked skills + in-repo hooks
 
-- **Windows.** Symlink creation on Windows needs Developer Mode or elevation.
-  A copied skill dir and an absolute in-repo hook command need neither.
+- **Windows.** Symlink creation may need Developer Mode or elevation. Managed
+  skill copies and absolute in-repo hook commands remain the fallback there.
 - **Hooks stay live.** The hook command string points straight at the vault's
   `.claude/hooks/` script, so editing a hook reflects globally, immediately —
   the same benefit a symlink gave, without the symlink.
-- **Skills are static.** A `SKILL.md` is markdown + assets with no live-edit
-  requirement, so a copy is fine; the manifest makes uninstall exact.
-- The uninstaller reverses everything **by content** (strip our settings
-  entries, remove manifest-tracked skill dirs) — never by `readlink`.
+- **Skills stay live.** Both clients resolve to one editable source on POSIX.
+  The manifest makes uninstall exact; foreign skill directories are preserved.
+- The uninstaller strips our settings entries and removes only managed links
+  or copies.
+
+## Codex registration
+
+`install.py` merges four user-level hooks into `~/.codex/hooks.json`. They call
+`scripts/codex_hook.py` in the vault and adapt Codex's event fields to Hera:
+startup and prompt retrieval, final-message citation scoring, and session-end
+filing. Codex transcripts are normalized to user prompts and final answers
+before ingestion; tool output and reasoning are excluded. The filing worker
+uses `codex exec` with hooks disabled and an ephemeral, read-only session.
+
+`~/.codex/hera.env` links to `~/.claude/hera.env` on POSIX, and
+`~/.codex/hera/AGENTS.md` links to the vault's `AGENTS.md`. A marked block is
+added to the user's existing `~/.codex/AGENTS.md`; other guidance is preserved.
+Codex requires the user to review and trust the hook definitions through
+`/hooks` before they execute.
 
 ## Backup + restore
 
@@ -175,8 +190,8 @@ Three things worth knowing:
 
 ## Windows notes
 
-- **Developer Mode is not required.** The installer creates no symlinks — skills
-  are copied and hooks run in-repo — so no elevation or Developer Mode is needed.
+- **Developer Mode is not required.** On Windows skills are copied and hooks
+  run in-repo, so no elevation or Developer Mode is needed.
 - **Interpreter path.** The venv interpreter is `.venv\Scripts\python.exe`
   (POSIX is `.venv/bin/python`); `install.py`, `hera_cli.py`, and the generated
   hook commands all resolve this per-OS automatically.
@@ -236,8 +251,8 @@ Three things worth knowing:
 ## When you change something
 
 - **Adding a new skill?** Add its directory to `SKILL_DIRS` in
-  `install.py` and rerun `python install.py` — the new dir is copied into
-  `~/.claude/skills/` and tracked in the manifest.
+  `install.py` and rerun `python install.py` — the new dir is linked into
+  both clients on POSIX and tracked in their manifests.
 - **Adding a new hook event?** Extend `_EVENT_META` in
   `scripts/install/settings.py` and `HOOK_SCRIPTS` in
   `scripts/install/hookcmd.py`. Rerun install; the merge is idempotent

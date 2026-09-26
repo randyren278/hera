@@ -1,4 +1,4 @@
-"""CP-7: docs describe the Windows-capable, symlink-free, install.py model.
+"""Docs describe POSIX links and Windows copies for install.py.
 
 Guards against a regression that reintroduces the stale "symlink mirror" /
 "bash install.sh" / "macOS or Linux only" story into README.md or
@@ -31,7 +31,7 @@ def test_global_install_describes_copy_not_symlink_mirror():
     assert "symlinks pointing at" not in GLOBAL
     assert "Why symlinks, not copies" not in GLOBAL
     # The new model is stated affirmatively.
-    assert "Why copies + in-repo hooks" in GLOBAL
+    assert "Why linked skills + in-repo hooks" in GLOBAL
     assert "no `~/.claude/hooks/` mirror" in GLOBAL or "no symlinks" in GLOBAL
 
 

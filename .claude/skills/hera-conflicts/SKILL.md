@@ -15,7 +15,7 @@ Global queue review (design §7.3 channel 4). Lists every open conflict with:
 - age
 
 > **Vault location.** This skill requires the vault root, written by
-> `install.py` into `~/.claude/hera.env` as `HERA_VAULT`.
+> `install.py` into `~/.claude/hera.env` (Claude Code) or `~/.codex/hera.env` (Codex) as `HERA_VAULT`.
 > If unset, error: `HERA_VAULT is not set — run python install.py from
 > the vault directory first.`
 
@@ -26,7 +26,7 @@ interpreter for the running OS, and re-execs the engine. Run it as:
     python "<VAULT>/scripts/hera_cli.py" <engine> [args...]
 
 replacing `<VAULT>` with the absolute path from `HERA_VAULT` (the one-line
-locator `~/.claude/hera.env`). Works identically on Windows and POSIX.
+locator `~/.claude/hera.env` (Claude Code) or `~/.codex/hera.env` (Codex)). Works identically on Windows and POSIX.
 
 ## Actions per open conflict
 

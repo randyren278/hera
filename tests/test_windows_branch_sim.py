@@ -66,18 +66,14 @@ def test_windows_merge_roundtrip(tmp_path):
 
 
 def test_registration_is_copy_not_symlink(tmp_path):
-    """Registration is OS-neutral by design (copytree, never symlink) — that IS
-    the Windows-correct behaviour (no Developer Mode needed). Verify the copy +
-    manifest round-trip. (We don't force os.name='nt' here: that would make
-    pathlib instantiate WindowsPath on a POSIX host, which Python forbids;
-    registration.py has no os.name branch to exercise.)"""
+    """Windows falls back to a copy without requiring Developer Mode."""
     vault = tmp_path / "vault"
     (vault / ".claude" / "skills" / "hera-setup").mkdir(parents=True)
     (vault / ".claude" / "skills" / "hera-setup" / "SKILL.md").write_text("x")
     home = tmp_path / "home"
     skills = home / "skills"
 
-    registered = registration.register_skills(vault, skills, ["hera-setup"], home)
+    registered = registration.register_skills(vault, skills, ["hera-setup"], home, os_name="nt")
     assert registered == ["hera-setup"]
     dst = skills / "hera-setup"
     assert dst.is_dir() and not dst.is_symlink()

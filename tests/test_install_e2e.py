@@ -31,12 +31,15 @@ def test_install_produces_all_artifacts(vault_env):
         assert ".claude/hooks/" in cmd or r".claude\hooks" in cmd
         assert "&&" not in cmd and "$" not in cmd  # cmd.exe-safe
 
-    # 3) skills copied (real dirs), no symlink anywhere.
+    # 3) both agents resolve skills to one live source.
     skills = home / "skills"
     for name in ("hera-setup", "hera-ingest", "hera-conflicts", "hera-prune", "hera-team"):
         assert (skills / name / "SKILL.md").is_file()
-        assert not (skills / name).is_symlink()
-    assert not any(p.is_symlink() for p in home.rglob("*"))
+        assert (skills / name).resolve() == (vault_env["vault"] / ".claude" / "skills" / name).resolve()
+        assert (vault_env["codex_home"] / "skills" / name).resolve() == (skills / name).resolve()
+    assert (vault_env["codex_home"] / "hera.env").resolve() == locator.resolve()
+    assert (vault_env["codex_home"] / "hera" / "AGENTS.md").resolve() == (vault_env["vault"] / "AGENTS.md").resolve()
+    assert len(json.loads((vault_env["codex_home"] / "hooks.json").read_text())["hooks"]) == 4
 
     # 4) project settings disabled.
     assert not proj.exists()
@@ -48,6 +51,8 @@ def test_install_produces_all_artifacts(vault_env):
     assert not locator.exists()
     assert not settings.exists()
     assert proj.exists()
+    assert not (vault_env["codex_home"] / "hooks.json").exists()
+    assert not (vault_env["codex_home"] / "skills" / "hera-ingest").exists()
 
 
 def test_dry_run_changes_nothing(vault_env):
@@ -58,3 +63,4 @@ def test_dry_run_changes_nothing(vault_env):
     assert not (home / "hera.env").exists()
     assert not (home / "settings.json").exists()
     assert not (home / "skills").exists()
+    assert not (vault_env["codex_home"] / "skills").exists()

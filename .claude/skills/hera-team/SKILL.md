@@ -12,7 +12,7 @@ what used to be two separate publish/retrieve skills into one honest verb
 router (`add` *publishes*, so the old "ingest-private" name is gone).
 
 > **Vault location.** Requires the vault root, written by `install.py` into
-> `~/.claude/hera.env` as `HERA_VAULT`. If unset, error and tell
+> `~/.claude/hera.env` (Claude Code) or `~/.codex/hera.env` (Codex) as `HERA_VAULT`. If unset, error and tell
 > the user to run `python install.py` from the vault first.
 
 **Invocation convention (OS-neutral).** Every engine call uses the one launcher
@@ -22,7 +22,10 @@ interpreter for the running OS, and re-execs the engine. Run it as:
     python "<VAULT>/scripts/hera_cli.py" <engine> [args...]
 
 replacing `<VAULT>` with the absolute path from `HERA_VAULT` (the one-line
-locator `~/.claude/hera.env`). Works identically on Windows and POSIX.
+locator `~/.claude/hera.env` (Claude Code) or `~/.codex/hera.env` (Codex)). Works identically on Windows and POSIX.
+
+In Codex, set `HERA_LLM_BACKEND=codex` in the command environment for ingest
+and publish operations that call the extraction or redaction model.
 
 ## Verb router
 
