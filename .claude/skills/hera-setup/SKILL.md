@@ -42,10 +42,16 @@ from the vault directory you cloned; `python install.py` creates the locator.
 4. **Ollama + model.** Verify Ollama is running (`ollama serve` in background)
    and pull `nomic-embed-text` if missing.
 
-5. **Hooks (CP-3).** Merge — **never clobber** — the SessionStart, UserPromptSubmit,
-   Stop, and SessionEnd hook entries into `.claude/settings.json`. The plan's
-   own checkpoint-runner Stop hook is already present; the merge must preserve
-   it. This step is TODO until CP-3. `# CP-3`
+5. **Hooks — verify, never hand-edit.** `python "<VAULT>/install.py"` is the
+   only thing that wires hooks: it writes absolute-path entries into the global
+   `~/.claude/settings.json` and `~/.codex/hooks.json`, removes Hera hooks any
+   *other* vault path registered, and renames the vault's project-local
+   `.claude/settings.json` to `.disabled`. Do **not** add hook entries to the
+   project `.claude/settings.json` yourself — with the global hooks present,
+   every event would fire twice. If hooks are missing or point at another vault,
+   re-run `python "<VAULT>/install.py"`, then confirm with `--doctor` (below):
+   it FAILs on another vault's hooks, a locator pointing elsewhere, or Codex
+   hooks using a different vault than Claude.
 
 6. **team space staging (optional).** Ask the user: **"Set up a team space? (y/N)"**
    A team space lets you publish redacted pages to — and search — a shared
@@ -67,8 +73,10 @@ from the vault directory you cloned; `python install.py` creates the locator.
      your git auth resolves (an empty repo with no refs still counts as
      reachable). On failure, show the error and re-prompt for a URL, or let
      the user skip team setup. On success, persist the remote per-machine by
-     appending (or replacing) this line in `~/.claude/hera.env` (Claude Code) or `~/.codex/hera.env` (Codex),
-     beside the existing `HERA_VAULT` (plain `KEY=VALUE`, no `export`):
+     appending (or replacing) this line in `~/.claude/hera.env`, beside the
+     existing `HERA_VAULT` (plain `KEY=VALUE`, no `export`). Edit that file in
+     place: on POSIX `~/.codex/hera.env` is a symlink to it, so Claude Code and
+     Codex share one locator — never replace the symlink with a copy:
 
      ```
      HERA_TEAM_REMOTE="<url>"
@@ -120,8 +128,9 @@ from the vault directory you cloned; `python install.py` creates the locator.
 
 `python "<VAULT>/scripts/hera_cli.py" hera_db --doctor`
 runs every readiness check: preflight, DB schema, integrity, sqlite-vec load,
-Ollama reachability, stale locks, unmerged deltas, scorer.log freshness, hook
-registration.
+Ollama reachability, stale locks, unmerged deltas, sessions awaiting a filing
+retry, scorer.log freshness, hook registration (including another vault's
+hooks, locator drift, and Claude/Codex vault parity).
 
 Exit 0 means the vault is healthy.
 
