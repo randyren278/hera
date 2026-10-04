@@ -94,11 +94,13 @@ from the vault directory you cloned; `python install.py` creates the locator.
      python "<VAULT>/scripts/hera_cli.py" team_sync clone-or-pull
      ```
 
-     Then create the owner's staging folder
-     `<VAULT>/team-staging/<owner>/` (owner = `HERA_OWNER`, default
-     `randy`).
+     Then ask the user **"What name should your team-space folder use?"**
+     and persist it beside the remote in `~/.claude/hera.env` as
+     `HERA_OWNER="<name>"` (skip if already set). There is no default:
+     without it, team writes refuse rather than publish under someone else's
+     folder. Create the owner's staging folder `<VAULT>/team-staging/<owner>/`.
 
-     The owner folder is named from `HERA_OWNER` (default `randy`) — the
+     The owner folder is named from `HERA_OWNER` — the
      **same** identity every writer uses (`publish.py`, `team_remove.py`).
      Do not derive it from the git author name: that produced an orphan
      folder no writer touches. `team_sync.py clone-or-pull` also drops a

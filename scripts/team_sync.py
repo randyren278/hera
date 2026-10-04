@@ -54,33 +54,57 @@ def _ensure_staging_gitignore() -> None:
 
 
 
-def _resolve_remote() -> str | None:
-    """Resolve the team space remote URL, or None if no team space is set.
-
-    Precedence: process env `HERA_TEAM_REMOTE`, else the same var
-    parsed out of `~/.claude/hera.env` (which the shell/install.sh
-    sources but a bare subprocess may not have inherited).
-    """
-    val = os.environ.get("HERA_TEAM_REMOTE")
-    if val and val.strip():
-        return val.strip()
-    env_file = pathlib.Path.home() / ".claude" / "hera.env"
+def _locator_value(key: str) -> str | None:
+    """A per-machine setting: process env first (an explicitly empty value
+    means unset), else the same key in the locator file (CLAUDE_HOME-aware),
+    which a bare subprocess may not have inherited."""
+    if key in os.environ:
+        return os.environ[key].strip() or None
+    home = pathlib.Path(os.environ.get("CLAUDE_HOME", pathlib.Path.home() / ".claude"))
+    env_file = home / "hera.env"
     if env_file.exists():
-        for line in env_file.read_text().splitlines():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if line.startswith("#") or "HERA_TEAM_REMOTE" not in line:
-                continue
-            # matches: export HERA_TEAM_REMOTE="url"  |  HERA_TEAM_REMOTE=url
-            _, _, rhs = line.partition("HERA_TEAM_REMOTE")
-            rhs = rhs.lstrip("=").strip().strip('"').strip("'")
-            if rhs:
-                return rhs
+            if line.startswith("export "):
+                line = line[len("export "):]
+            k, sep, rhs = line.partition("=")
+            if sep and k.strip() == key:
+                rhs = rhs.strip().strip('"').strip("'")
+                if rhs:
+                    return rhs
     return None
 
 
+def _resolve_remote() -> str | None:
+    """The team space remote URL (`HERA_TEAM_REMOTE`), or None if unset."""
+    return _locator_value("HERA_TEAM_REMOTE")
+
+
+OWNER_MISSING = ("HERA_OWNER is not set — add HERA_OWNER=\"<your name>\" to "
+                 "~/.claude/hera.env (/hera-setup asks for it). Team writes need "
+                 "it so you publish under your own folder, never someone else's.")
+
+
+def owner() -> str | None:
+    """Your team-space folder name (`HERA_OWNER`). No default: a guessed owner
+    would publish into, or remove from, someone else's folder."""
+    return _locator_value("HERA_OWNER")
+
+
+GIT_TIMEOUT_S = 120
+
+
 def _run(args: list[str], cwd: pathlib.Path | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(args, cwd=str(cwd) if cwd else None,
-                          capture_output=True, text=True)
+    """Run git non-interactively with a deadline: a credential prompt or a dead
+    network must fail the command, never hang the agent that called it."""
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
+    try:
+        return subprocess.run(args, cwd=str(cwd) if cwd else None, capture_output=True,
+                              text=True, env=env, timeout=GIT_TIMEOUT_S,
+                              stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            args, 124, "", f"timed out after {GIT_TIMEOUT_S}s: {' '.join(args)}\n")
 
 
 def _reindex_after_sync() -> None:

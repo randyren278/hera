@@ -7,8 +7,9 @@ it lists the pages YOU published (owner-scoped) and stages git-rm deletions,
 confined to `team-staging/<owner>/`.
 
 Safety invariants (mirror the publish gate):
-  - OWNER is resolved EXACTLY like publish.py: HERA_OWNER env, default "randy".
-    The staging folder is team-staging/<owner>/, NOT git user.name.
+  - OWNER is resolved EXACTLY like publish.py: HERA_OWNER (env, else
+    ~/.claude/hera.env), with no default — unset means refuse. The staging
+    folder is team-staging/<owner>/, NOT git user.name.
   - Owner-scoped: stage-remove refuses ANY path outside team-staging/<owner>/.
     A single out-of-scope path aborts the whole call and stages nothing (fail-closed).
   - It NEVER publishes to the remote. Sending staged changes upstream routes
@@ -30,8 +31,8 @@ sys.path.insert(0, str(REPO / "scripts"))
 import team_sync  # noqa: E402  (shared remote resolver + no-team message)
 
 STAGING = REPO / "team-staging"
-OWNER = os.environ.get("HERA_OWNER", "randy")
-OWNER_DIR = STAGING / OWNER
+OWNER = team_sync.owner()
+OWNER_DIR = STAGING / OWNER if OWNER else None
 
 
 def _no_team_space() -> bool:
@@ -41,8 +42,7 @@ def _no_team_space() -> bool:
 
 
 def _run(args: list[str], cwd: pathlib.Path | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(args, cwd=str(cwd) if cwd else None,
-                          capture_output=True, text=True)
+    return team_sync._run(args, cwd=cwd)  # non-interactive, with a deadline
 
 
 def _in_owner_scope(path: str) -> bool:
@@ -51,6 +51,8 @@ def _in_owner_scope(path: str) -> bool:
     Standalone so tests can assert the guard directly. Fail-closed: anything
     that doesn't resolve strictly under OWNER_DIR is out of scope.
     """
+    if OWNER_DIR is None:
+        return False
     try:
         p = pathlib.Path(path).resolve()
         owner_root = OWNER_DIR.resolve()
@@ -165,12 +167,11 @@ def _abs(p: str) -> str:
 
 
 def diff() -> str:
-    """Show the staging clone's staged diff (what publishing would send upstream)."""
-    if not (STAGING / ".git").exists():
-        return "(team-staging is not a git repo)"
-    _run(["git", "add", "-A"], cwd=STAGING)
-    r = _run(["git", "diff", "--cached", "--no-color"], cwd=STAGING)
-    return r.stdout
+    """Show the staging clone's staged diff (what publishing would send
+    upstream), with the scan findings and the review-token that
+    `publish.py push --confirm` requires — the one gated push path."""
+    import publish  # lazy: publish pulls in the ingest engine
+    return publish.render_diff()
 
 
 def _cli() -> int:
@@ -190,6 +191,10 @@ def _cli() -> int:
     sub.add_parser("diff")
 
     a = ap.parse_args()
+
+    if a.cmd in ("list", "stage-remove") and not OWNER:
+        print(team_sync.OWNER_MISSING, file=sys.stderr)
+        return 2
 
     if a.cmd == "list":
         pages = list_pages()

@@ -51,8 +51,14 @@ reaches the shared repo without the human diff review.
    into `team-staging/<owner>/{sources,concepts,entities}/`, each stamped
    `visibility: public` and `owner: <you>`.
 3. Show the diff: `python "<VAULT>/scripts/hera_cli.py" publish diff`.
-   Present the full unified diff. **Wait for explicit confirmation.**
-4. On confirmation only: `python "<VAULT>/scripts/hera_cli.py" publish push -m "..."`.
+   Present the full unified diff, every `BLOCKED` / `warning` line under it,
+   and the closing `review-token: <t>`. **Wait for explicit confirmation.**
+   A `BLOCKED` line (likely secret) means push will refuse: fix the staged
+   file, then show the diff again.
+4. On confirmation only: `python "<VAULT>/scripts/hera_cli.py" publish push -m "..." --confirm <t>`
+   with the token from the diff the human approved. Push refuses if the staged
+   content changed since that diff — never re-run `diff` just to get a fresh
+   token without showing the new diff to the human.
    On rejection: leave staging as-is; report what was staged and what was held back.
 
 Strip rules (defense in depth; the human diff review is the safety mechanism):
@@ -83,8 +89,9 @@ is the undo — there is no `.archive` mirror on the team side.
    This `git rm`s the chosen pages in the staging clone. It is fail-closed: if
    any path is outside your `<owner>/` folder, it refuses and stages nothing.
 5. Show the diff: `python "<VAULT>/scripts/hera_cli.py" team_remove diff`.
-   Present it. **Wait for explicit "push" / "confirm".** Never push unasked.
-6. On confirmation only: `python "<VAULT>/scripts/hera_cli.py" publish push -m "hera: remove <what>"`.
+   Present it with its `review-token: <t>`. **Wait for explicit "push" /
+   "confirm".** Never push unasked.
+6. On confirmation only: `python "<VAULT>/scripts/hera_cli.py" publish push -m "hera: remove <what>" --confirm <t>`.
    (Removal and publish share the one gated push path.) On rejection: leave the
    staged deletions in place and report them, or `git -C team-staging reset`
    to unstage if the user wants to back out entirely.

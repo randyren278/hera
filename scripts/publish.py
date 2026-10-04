@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import json
 import os
 import pathlib
@@ -41,8 +42,8 @@ CLAUDE_CWD = _ingest.CLAUDE_CWD
 
 import team_sync  # noqa: E402  (shared remote resolver + no-team message)
 
-STAGING = REPO / "team-staging"
-OWNER = os.environ.get("HERA_OWNER", "randy")
+STAGING = team_sync.STAGING  # honors $HERA_VAULT like every team engine
+OWNER = team_sync.owner()  # None → team writes refuse (team_sync.OWNER_MISSING)
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN") or shutil.which("claude") or "claude"
 
 
@@ -64,8 +65,9 @@ Redaction rules (defense in depth; the human still reviews the diff):
     "this is bad", "this is great")
   - KEEP facts, technical patterns, framework definitions, generic entities
     (well-known public companies, projects, and papers are OK).
-  - KEEP wikilinks; only strip the page body they point to if the target is
-    itself private.
+  - UNLINK wikilinks: replace each [[Page Title]] with plain text, and drop
+    it entirely if the title itself names a private person, project, or
+    employer — a link to a page that is not published leaks its title.
 
 Return ONLY the stripped markdown body — no code fence, no preamble.
 If the page is not safe to publish at all, return the single token: SKIP.
@@ -158,29 +160,86 @@ def stage_private_ingest(source_path: str, source_kind: str = "file") -> dict:
     }
 
 
+# Deterministic secret scan over ADDED lines of the staged diff. The LLM
+# redactor is not a security boundary; these patterns are. BLOCK stops a push;
+# WARN is shown in the diff for the human reviewer.
+BLOCK_PATTERNS = [
+    ("private key", r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    ("AWS access key", r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+    ("GitHub token", r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{20,})"),
+    ("Slack token", r"\bxox[abposr]-[A-Za-z0-9-]{10,}"),
+    ("Anthropic/OpenAI key", r"\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}"),
+    ("Google API key", r"\bAIza[0-9A-Za-z_-]{35}\b"),
+    ("JWT", r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
+    ("credential assignment",
+     r"(?i)\b(?:password|passwd|secret|api[_-]?key|access[_-]?token)\b\s*[:=]\s*['\"]?[^\s'\"]{8,}"),
+]
+WARN_PATTERNS = [
+    ("email address", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
+    ("home-directory path", r"(?:/Users/|/home/|C:\\Users\\)[^/\\\s]+"),
+]
+
+
+def scan_diff(diff: str) -> tuple[list[str], list[str]]:
+    """(blocking, warnings) findings on the diff's added lines."""
+    added = [l[1:] for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++")]
+    def hits(patterns):
+        out = []
+        for name, rx in patterns:
+            for line in added:
+                if re.search(rx, line):
+                    out.append(f"{name}: {line.strip()[:120]}")
+                    break
+        return out
+    return hits(BLOCK_PATTERNS), hits(WARN_PATTERNS)
+
+
+def review_token(diff: str) -> str:
+    """Fingerprint of exactly the diff a human reviewed; push must quote it."""
+    return hashlib.sha256(diff.encode("utf-8")).hexdigest()[:12]
+
+
+def staged_diff() -> str:
+    team_sync._run(["git", "add", "-A"], cwd=STAGING)
+    return team_sync._run(["git", "diff", "--cached", "--no-color"], cwd=STAGING).stdout
+
+
 def render_diff() -> str:
-    """Render the staging clone's uncommitted diff. Returns a unified diff string."""
-    owner_dir = STAGING / OWNER
+    """The staging clone's pending diff, followed by scan findings and the
+    review token that `push --confirm` requires."""
     if not (STAGING / ".git").exists():
         return "(team-staging is not a git repo)"
-    r = subprocess.run(["git", "-C", str(STAGING), "add", "-A"],
-                       capture_output=True, text=True)
-    r2 = subprocess.run(["git", "-C", str(STAGING), "diff", "--cached", "--no-color"],
-                        capture_output=True, text=True)
-    return r2.stdout
+    diff = staged_diff()
+    if not diff.strip():
+        return "(nothing staged)"
+    blocking, warnings = scan_diff(diff)
+    tail = [""]
+    tail += [f"BLOCKED — likely secret ({b})" for b in blocking]
+    tail += [f"warning — review: {w}" for w in warnings]
+    tail.append(f"review-token: {review_token(diff)}")
+    return diff + "\n".join(tail)
 
 
-def commit_and_push(commit_msg: str) -> str:
-    """Commit staged changes and push. Returns 'ok' or an error message."""
+def commit_and_push(commit_msg: str, confirm: str | None) -> str:
+    """Commit staged changes and push — only if ``confirm`` is the review token
+    of the diff staged right now and the secret scan is clean. Returns 'ok' or
+    an error message."""
     if not (STAGING / ".git").exists():
         return "team-staging is not a git repo"
-    subprocess.run(["git", "-C", str(STAGING), "add", "-A"], check=True)
-    r = subprocess.run(["git", "-C", str(STAGING), "commit", "-m", commit_msg],
-                       capture_output=True, text=True)
+    diff = staged_diff()
+    if not diff.strip():
+        return "nothing staged to push"
+    if confirm != review_token(diff):
+        return ("refused: --confirm must be the review-token printed by `diff` for the "
+                "content staged now (none given, or the staged content changed since "
+                "review). Re-run diff, have the human review it, then push --confirm <token>.")
+    blocking, _ = scan_diff(diff)
+    if blocking:
+        return "refused: likely secret in the staged diff — " + "; ".join(blocking)
+    r = team_sync._run(["git", "commit", "-m", commit_msg], cwd=STAGING)
     if r.returncode != 0 and "nothing to commit" not in (r.stdout + r.stderr):
         return f"commit failed: {r.stderr}"
-    p = subprocess.run(["git", "-C", str(STAGING), "push"],
-                       capture_output=True, text=True)
+    p = team_sync._run(["git", "push"], cwd=STAGING)
     if p.returncode != 0:
         return f"push failed: {p.stderr}"
     return "ok"
@@ -199,7 +258,13 @@ def _cli() -> int:
     sub.add_parser("diff")
     p_push = sub.add_parser("push")
     p_push.add_argument("--message", "-m", default="hera: public update")
+    p_push.add_argument("--confirm", metavar="REVIEW_TOKEN",
+                        help="the review-token `diff` printed for the reviewed content")
     a = ap.parse_args()
+
+    if a.cmd == "stage" and not OWNER:
+        print(team_sync.OWNER_MISSING, file=sys.stderr)
+        return 2
 
     if a.cmd == "stage":
         summary = stage_private_ingest(a.source, a.kind)
@@ -221,7 +286,7 @@ def _cli() -> int:
         return 0
 
     if a.cmd == "push":
-        r = commit_and_push(a.message)
+        r = commit_and_push(a.message, a.confirm)
         print(r)
         return 0 if r == "ok" else 1
 
