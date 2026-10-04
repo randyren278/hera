@@ -146,20 +146,26 @@ def prune(conn: sqlite3.Connection, cands: list[Candidate], dry_run: bool = True
 
 
 def restore(conn: sqlite3.Connection, page_id: str) -> str:
-    """Un-archive a page: move the file back, clear archived_at.
-    The FTS + vec rows are NOT restored automatically; the caller should re-ingest
-    or call ingest._index_page_search to rebuild them."""
-    row = conn.execute("SELECT title, path FROM pages WHERE id = ? AND archived_at IS NOT NULL",
+    """Un-archive a page: move the file back, clear archived_at, rebuild its
+    FTS + vec rows.
+
+    The file move and the DB update in prune() cannot be one transaction, so
+    restore also repairs a prune interrupted between them: an archived file
+    the DB never marked, or a marked page whose file never moved."""
+    row = conn.execute("SELECT title, path, type, archived_at FROM pages WHERE id = ?",
                        (page_id,)).fetchone()
     if not row:
-        raise SystemExit(f"page {page_id} not found in archive")
-    title, orig_path = row
+        raise SystemExit(f"page {page_id} not found")
+    title, orig_path, type_, archived_at = row
     src = ARCHIVE / f"{page_id}.{pathlib.Path(orig_path).name}"
-    if not src.exists():
-        raise SystemExit(f"archive file missing: {src}")
     dst = REPO / orig_path
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(src), str(dst))
+    if src.exists():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dst))
+    elif not dst.exists():
+        raise SystemExit(f"archive file missing: {src}")
+    elif archived_at is None:
+        raise SystemExit(f"page {page_id} is not archived")
     conn.execute("UPDATE pages SET archived_at = NULL WHERE id = ?", (page_id,))
     conn.commit()
 
@@ -170,7 +176,7 @@ def restore(conn: sqlite3.Connection, page_id: str) -> str:
         end = body.find("\n---\n", 4)
         if end != -1:
             body = body[end + 5:]
-    pw = ingest.PageWrite(id=page_id, title=title, type="concept",
+    pw = ingest.PageWrite(id=page_id, title=title, type=type_,
                           path=dst, body_md=body)
     ingest._index_page_search(conn, pw)
     conn.commit()

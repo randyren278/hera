@@ -45,6 +45,31 @@ def _load_conflict(conn, cid: int) -> dict:
     return dict(zip(keys, row))
 
 
+def _load_open(conn, cid: int) -> dict:
+    """The conflict, if still open. Resolving twice would append a second
+    Update/Superseded section (or callout) to the page."""
+    c = _load_conflict(conn, cid)
+    if c["status"] != "open":
+        raise SystemExit(f"conflict #{cid} is already {c['status']} — nothing to do")
+    return c
+
+
+def _reindex(conn, c: dict, page_path: pathlib.Path) -> None:
+    """Refresh the page's FTS + vector rows after its body changed, so search
+    stops matching the superseded text. Best effort: an embed failure leaves
+    the resolution in place and says so."""
+    import ingest  # lazy: ingest imports this module during auto-resolve
+    _fm, body = _split_frontmatter(page_path.read_text(encoding="utf-8"))
+    try:
+        ingest._index_page_search(conn, ingest.PageWrite(
+            id=c["page_id"], title=c["page_title"], type="concept",
+            path=page_path, body_md=body))
+        conn.commit()
+    except Exception as e:  # noqa: BLE001
+        print(f"warning: conflict resolved but page not reindexed ({e}); "
+              "it is reindexed on its next ingest", file=sys.stderr)
+
+
 def _mark_resolved(conn, cid: int, status: str) -> None:
     conn.execute(
         "UPDATE conflicts SET status = ?, resolved_at = ? WHERE id = ?",
@@ -64,7 +89,7 @@ def resolve_new(conn, cid: int, new_body_replacement: str | None = None) -> None
     """New claim wins. Replace the page body (or use new_body_replacement if
     provided by the caller) and append an `## Superseded` section preserving
     the old claim + source + date. Nothing is destroyed."""
-    c = _load_conflict(conn, cid)
+    c = _load_open(conn, cid)
     page_path = REPO / c["page_path"]
     if not page_path.exists():
         raise SystemExit(f"page file missing: {page_path}")
@@ -89,16 +114,18 @@ def resolve_new(conn, cid: int, new_body_replacement: str | None = None) -> None
         page_path.write_text(new_text, encoding="utf-8")
 
     _mark_resolved(conn, cid, "resolved_new")
+    _reindex(conn, c, page_path)
 
 
 def resolve_old(conn, cid: int) -> None:
+    _load_open(conn, cid)
     _mark_resolved(conn, cid, "resolved_old")
 
 
 def resolve_both(conn, cid: int) -> None:
     """Both true in different contexts. Append a permanent `> [!conflict]`
     callout — the ONLY place this callout exists (design §7.4)."""
-    c = _load_conflict(conn, cid)
+    c = _load_open(conn, cid)
     page_path = REPO / c["page_path"]
     if not page_path.exists():
         raise SystemExit(f"page file missing: {page_path}")
@@ -113,9 +140,11 @@ def resolve_both(conn, cid: int) -> None:
     with locks.lock(page_path, page_id=c["page_id"], conn=conn, allow_delta=False):
         page_path.write_text(new_text, encoding="utf-8")
     _mark_resolved(conn, cid, "resolved_both")
+    _reindex(conn, c, page_path)
 
 
 def dismiss(conn, cid: int) -> None:
+    _load_open(conn, cid)
     _mark_resolved(conn, cid, "dismissed")
 
 
