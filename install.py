@@ -216,7 +216,7 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
     # Step 2: initialize hera.db (idempotent).
     ui.step("step 2/7: hera.db")
     if dry:
-        ui.info("[dry] hera_db.py --init (if hera.db absent)")
+        ui.info("[dry] hera_db.py --init (if hera.db absent); reembed.py --if-needed")
     else:
         db = VAULT / "hera.db"
         if db.exists() and db.stat().st_size > 0:
@@ -230,6 +230,19 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
                 print(f"install: hera.db init failed: {rc.stderr}", file=sys.stderr)
                 return 1
             ui.info("hera.db initialized")
+        # Bring an existing index onto the current embedding scheme (no-op when
+        # already current). Needs Ollama; on failure retrieval keeps working on
+        # the old vectors and --doctor names the command to finish it.
+        import venv as venv_mod
+        py = venv_mod.venv_python(VAULT)
+        for idx in (db, VAULT / "team.db"):
+            if not idx.exists():
+                continue
+            rc = subprocess.run([str(py), str(VAULT / "scripts" / "reembed.py"),
+                                 "--db", str(idx), "--if-needed"],
+                                capture_output=True, text=True)
+            ui.info((rc.stdout or rc.stderr).strip().splitlines()[-1] if (rc.stdout or rc.stderr).strip()
+                    else f"reembed {idx.name}: rc={rc.returncode}")
 
     # Step 3: locator file.
     ui.step(f"step 3/7: locator ({loc_env})")

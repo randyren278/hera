@@ -202,9 +202,13 @@ from any (foreign) working directory. The locator file is written by
   - Silent if the prompt matches `CODING_RE`, a heuristic that skips pure
     coding/syntax questions (e.g. "how do i … git/npm/docker…", "write a
     function/regex…", "fix/debug this…").
-  - Otherwise: `hera_db.connect()`, reads `inject_top_n` and
-    `inject_relevance_floor` from the `config` table, then calls
-    `search.hybrid_search(conn, prompt, top_n=..., floor=...)`. No hits → silent.
+  - Otherwise: `hera_db.connect()`, reads `inject_top_n`,
+    `inject_relevance_floor` and `inject_min_cosine` from `config`, embeds the
+    prompt **once** (`embed_query`, 4 s timeout, no retry — a dead Ollama costs
+    ~0.1 s, not the 10 s hook budget), and runs `hybrid_search` over `hera.db`
+    and, only if `team.db` exists, `team_hybrid_search` (opened without
+    creating it). Hits below the cosine gate are dropped (ADR-15). No hits →
+    silent.
   - **Injects** a block headed "Relevant vault pages (pointers only — read the
     file if needed). A page is credited when the final answer cites it as
     (Source: [[Title]]):" — the second sentence is what gets the model to cite
@@ -236,7 +240,7 @@ from any (foreign) working directory. The locator file is written by
   prints nothing. This is the make-or-break invariant: injection must degrade to
   silence, never to an error that disrupts the prompt.
 
-For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`), see
+For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`, cosine gate `0.65`), see
 [DECISIONS.md](DECISIONS.md).
 
 ---

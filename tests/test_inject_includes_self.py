@@ -123,3 +123,11 @@ def test_pointer_block_says_how_citations_are_credited():
         Vault(root).add_page(TITLE, BODY, trust="self")
         out = _run_hook(root)
         assert "(Source: [[Title]])" in out.splitlines()[0], out
+
+
+def test_off_topic_prompt_injects_nothing():
+    """The relevance gate: a vault page must not ride along on an unrelated prompt."""
+    with tempfile.TemporaryDirectory() as d:
+        root = pathlib.Path(d)
+        Vault(root).add_page(TITLE, BODY, trust="self")
+        assert _run_hook(root, "explain quicksort time complexity") == ""

@@ -140,7 +140,7 @@ def _index_page(conn, path: pathlib.Path) -> str | None:
 
     # Vector row — identical payload rule as local ingest (title + first ~2000 chars).
     payload = f"{title}\n{body[:2000]}"
-    vec = _embed.embed(payload)
+    vec = _embed.embed_document(payload)
     conn.execute("DELETE FROM pages_vec WHERE page_id = ?", (pid,))
     conn.execute("INSERT INTO pages_vec(page_id, embedding) VALUES (?, ?)",
                  (pid, _embed.pack(vec)))

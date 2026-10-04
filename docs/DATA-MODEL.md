@@ -202,8 +202,9 @@ hit's rank *position*, not its raw score. (Full definition:
 
 ### 2.10 `pages_vec`: sqlite-vec vector index
 `CREATE VIRTUAL TABLE pages_vec USING vec0(page_id TEXT PRIMARY KEY,
-embedding FLOAT[768])`. One 768-dim embedding per page. This is the
-dense-cosine half of hybrid search. See [ranking](PIPELINES.md#2-hybrid-search-scriptssearchpy)
+embedding FLOAT[768])`. One 768-dim embedding per page, stored at unit length
+with nomic's `search_document:` prefix (scheme in `config.embed_scheme`, ADR-15),
+so the default L2 KNN ranks by cosine. This is the dense half of hybrid search. See [ranking](PIPELINES.md#2-hybrid-search-scriptssearchpy)
 for how the two halves fuse.
 
 ---
@@ -220,7 +221,9 @@ Seeded by `DEFAULT_CONFIG` via `INSERT OR IGNORE`. Existing values are
 | `prune_pct_low` | `"40"` | prune middle-band lower percentile |
 | `prune_pct_high` | `"70"` | prune middle-band upper percentile |
 | `prune_min_age_days` | `"30"` | minimum page age to be prunable |
-| `inject_relevance_floor` | `"0.015"` | prompt-inject RRF relevance floor |
+| `inject_relevance_floor` | `"0.015"` | RRF tail trim (not a relevance gate) |
+| `inject_min_cosine` | `"0.65"` | prompt-inject relevance gate (ADR-15) |
+| `embed_scheme` | set on create / by `reembed.py` | embedding scheme of stored vectors |
 | `inject_top_n` | `"3"` | number of pointer lines injected |
 | `lock_retries` | `"3"` | lock retry count |
 | `lock_backoff_seconds` | `"1.6"` | lock backoff base |
@@ -236,8 +239,8 @@ Seeded by `DEFAULT_CONFIG` via `INSERT OR IGNORE`. Existing values are
 Which values are read by which engine:
 
 - `points_final` → `stop_score.py` (citation scoring).
-- `inject_top_n`, `inject_relevance_floor` → `prompt_inject.py` (passed to
-  `hybrid_search`).
+- `inject_top_n`, `inject_relevance_floor`, `inject_min_cosine` →
+  `prompt_inject.py`.
 - `prune_min_age_days`, `prune_pct_low`, `prune_pct_high` → `prune.py`.
 - `points_thinking` → loaded by `stop_score.py` but inert (Tier-1 disabled).
 

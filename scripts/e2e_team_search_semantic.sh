@@ -42,7 +42,7 @@ assert target_id in hit_ids, (
 
 # The dense arm must be why it ranks: either FTS missed it entirely, or the
 # vector arm contributed (target present in vec KNN).
-qvec = _search.embed(query)
+qvec = _search.embed_query(query)
 vec_ids = [pid for pid, _ in _search._vec_hits(conn, qvec, 20)]
 assert target_id in vec_ids, "vector arm did not retrieve the target — not semantic"
 

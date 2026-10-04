@@ -450,7 +450,7 @@ def _index_page_search(conn, pw: PageWrite):
     # Embedding: title + first ~500 chars of body — enough signal for retrieval
     # without embedding an entire book of text.
     payload = f"{pw.title}\n{pw.body_md[:2000]}"
-    vec = _embed.embed(payload)
+    vec = _embed.embed_document(payload)
     conn.execute("DELETE FROM pages_vec WHERE page_id = ?", (pw.id,))
     conn.execute("INSERT INTO pages_vec(page_id, embedding) VALUES (?, ?)",
                  (pw.id, _embed.pack(vec)))

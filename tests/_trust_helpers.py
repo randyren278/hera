@@ -78,7 +78,7 @@ class Vault:
             "INSERT OR REPLACE INTO pages_fts_map(rowid, page_id) VALUES (?, ?)",
             (cur.lastrowid, pid))
 
-        vec = _embed.embed(f"{title}\n{body[:2000]}")
+        vec = _embed.embed_document(f"{title}\n{body[:2000]}")
         self.conn.execute("DELETE FROM pages_vec WHERE page_id = ?", (pid,))
         self.conn.execute(
             "INSERT INTO pages_vec(page_id, embedding) VALUES (?, ?)",

@@ -40,6 +40,7 @@ class Hit:
     path: str
     score: float = 1.0
     trust: str = "self"
+    cosine: float = 1.0
 DEFAULT_TRUST = ("self", "team")
 def hybrid_search(conn, query, top_n=3, floor=0.0, **kwargs):
     return [Hit(page_id="P1", title="Probe Page", path="wiki/sources/probe.md")]
@@ -60,6 +61,11 @@ class _Conn:
         if "inject_relevance_floor" in s: return _Cur([("0.0",)])
         return _Cur([])  # conflicts query -> none
 def connect(*a, **k): return _Conn()
+PY
+
+# Stub embed.py: the hook embeds the query once and hands it to search.
+cat > "$VAULT/scripts/embed.py" <<'PY'
+def embed_query(text, **kw): return [0.0] * 768
 PY
 
 export HERA_VAULT="$VAULT"

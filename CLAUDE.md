@@ -177,7 +177,9 @@ publish" / "search the team space" → `/hera-team retrieve`.
   four channels (ADR-10). Session-source explicit user statements
   auto-resolve as `resolved_new` (ADR-11); everything else waits.
 - **Ranking uses Reciprocal Rank Fusion (k=60)** over BM25 and dense
-  cosine. Floor is `0.015` — recalibrate before changing.
+  cosine. Injection keeps a hit only if cosine ≥ `inject_min_cosine` (0.65,
+  ADR-15); the `0.015` RRF floor only trims the tail. Recalibrate before
+  changing either.
 - **ULIDs are page addresses.** Filenames may change, IDs don't.
 
 ---

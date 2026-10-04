@@ -13,7 +13,7 @@ Three questions this page answers in one place, because otherwise you'd stitch t
 
 ## 1. The ranking model (read this first)
 
-Ranking is **two retrievers fused into one order.** A query runs against two independent indexes of the same pages — a keyword index (BM25) and a meaning index (dense vectors) — each producing its own ranked list. Those two lists are merged with **Reciprocal Rank Fusion (RRF)**: a page's score is the sum of `1/(k + rank)` over each list that ranked it. A page that both retrievers like ranks higher than one only a single retriever found. After fusion, anything below a **relevance floor** is dropped, and the top few survive. The same fusion math runs over your personal index and over the team index, on the same scale, so a teammate's page and your own page compete fairly for the same slot.
+Ranking is **two retrievers fused into one order.** A query runs against two independent indexes of the same pages — a keyword index (BM25) and a meaning index (dense vectors) — each producing its own ranked list. Those two lists are merged with **Reciprocal Rank Fusion (RRF)**: a page's score is the sum of `1/(k + rank)` over each list that ranked it. A page that both retrievers like ranks higher than one only a single retriever found. After fusion, a loose floor trims the tail; for prompt injection, each surviving page must also be **semantically close** to the prompt (cosine ≥ `inject_min_cosine`, ADR-15), so an off-topic prompt injects nothing. The same fusion math runs over your personal index and over the team index, on the same scale, so a teammate's page and your own page compete fairly for the same slot.
 
 Nothing about ranking is learned per query — the embedding model and the fusion constant are fixed. What *does* move over time is the underlying page set (ingest adds, prune archives) and, indirectly, which pages you cite (citations drive prune, prune changes what's retrievable).
 
@@ -28,7 +28,7 @@ flowchart LR
   Q(["query text"]) --> EMB["embed&#40;query&#41;<br>Ollama nomic-embed-text, 768-dim"]
   Q --> TOK["tokenize:<br>\\w+ tokens, len &ge; 2, OR-joined"]
   TOK --> BM["BM25 over pages_fts<br>&#40;lower bm25&#40;&#41; = better&#41;"]
-  EMB --> VEC["cosine KNN over pages_vec<br>&#40;lower distance = nearer&#41;"]
+  EMB --> VEC["KNN over unit vectors in pages_vec<br>&#40;L2 order = cosine order&#41;"]
   BM --> RRF["_rrf_fuse:<br>score = &Sigma; 1/&#40;k + rank&#41;"]
   VEC --> RRF
   RRF --> FLOOR["drop score &lt; floor,<br>skip archived pages"]
@@ -38,7 +38,7 @@ flowchart LR
 - **BM25 half** (`_fts_hits`) runs `bm25(pages_fts)` joined through `pages_fts_map` (rowid → page_id). The query is split into `\w+` tokens ≥ 2 chars, each quoted as a phrase and OR-joined, so it's a bag-of-words match on *any* term. A malformed FTS query fails safe to no hits.
 - **Dense half** (`_vec_hits`) embeds the query via Ollama `nomic-embed-text` (768-dim — matches `pages_vec FLOAT[768]`) and runs a `sqlite-vec` KNN, nearest first.
 - **RRF** (`_rrf_fuse`, shared by local and team search so the math lives in one place) uses **1-based positional ranks**, not the raw `bm25()`/`distance` values. Constant `RRF_K = 60`.
-- **Floor + archived filter.** After sorting, hits below the floor are dropped, and each surviving page is re-checked with `archived_at IS NULL`, so pruned pages never resurface.
+- **Floor + archived filter.** After sorting, hits below the RRF floor are dropped (a tail trim, not a relevance test — the hook's cosine gate is), and each surviving page is re-checked with `archived_at IS NULL`, so pruned pages never resurface.
 
 The exact arithmetic, the fail-safe behavior, and the derivation of `k=60` / the floor are in [PIPELINES.md § hybrid search](PIPELINES.md#2-hybrid-search-scriptssearchpy). The tunable values (`inject_relevance_floor`, `inject_top_n`, etc.) and their homes are in the [config table](PIPELINES.md#config-and-thresholds-where-the-numbers-live) — this page does not restate them.
 

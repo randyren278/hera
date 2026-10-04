@@ -28,6 +28,9 @@ import urllib.request
 
 import sqlite_vec
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import embed as _embed  # noqa: E402  (stdlib-only; for the scheme constant)
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 DB_PATH = pathlib.Path(os.environ.get("HERA_DB", REPO / "hera.db"))
 SCORER_LOG = pathlib.Path(os.environ.get("HERA_SCORER_LOG", REPO / ".hera" / "scorer.log"))
@@ -135,6 +138,10 @@ DEFAULT_CONFIG = {
     "prune_pct_high": "70",
     "prune_min_age_days": "30",
     "inject_relevance_floor": "0.015",
+    # Per-hit cosine gate for injection (unit vectors, embed.SCHEME). Calibrated
+    # on the live vault: on-topic prompts' top hits scored >= 0.72, off-topic
+    # prompts' best hits <= 0.62. RRF scores carry no absolute relevance.
+    "inject_min_cosine": "0.65",
     "inject_top_n": "3",
     "lock_retries": "3",
     "lock_backoff_seconds": "1.6",
@@ -187,6 +194,19 @@ def init_schema(conn: sqlite3.Connection) -> None:
         # Seed defaults for any missing config keys — never overwrite.
         for k, v in DEFAULT_CONFIG.items():
             conn.execute("INSERT OR IGNORE INTO config(key, value) VALUES (?, ?)", (k, v))
+        # Embedding scheme: an empty index is born on the current scheme; one
+        # with vectors and no record predates it and needs scripts/reembed.py.
+        if embed_scheme(conn) is None and not conn.execute(
+                "SELECT 1 FROM pages_vec LIMIT 1").fetchone():
+            conn.execute("INSERT INTO config(key, value) VALUES ('embed_scheme', ?)",
+                         (_embed.SCHEME,))
+
+
+def embed_scheme(conn: sqlite3.Connection) -> str | None:
+    """The embedding scheme the stored vectors were built with (None = legacy:
+    raw, unprefixed, unnormalized vectors)."""
+    row = conn.execute("SELECT value FROM config WHERE key='embed_scheme'").fetchone()
+    return row[0] if row else None
 
 
 def ensure_ready(db_path: pathlib.Path = DB_PATH) -> sqlite3.Connection:
@@ -368,6 +388,15 @@ def doctor(verbose: bool = False) -> int:
         _ok("integrity_check")
     else:
         _fail(f"integrity_check: {ic}", state)
+
+    # 3b. Embedding scheme: vectors built under an older scheme are compared
+    #     against current-scheme queries and rank badly.
+    scheme = embed_scheme(conn)
+    if scheme == _embed.SCHEME:
+        _ok(f"embedding scheme ({scheme})")
+    else:
+        _fail(f"embedding scheme is {scheme or 'legacy'}, expected {_embed.SCHEME} — run "
+              f"`{sys.executable} {REPO / 'scripts' / 'reembed.py'}`", state)
 
     # 4. sqlite-vec sanity.
     try:

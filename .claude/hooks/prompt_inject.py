@@ -37,8 +37,8 @@ REPO = pathlib.Path(_env_vault).resolve() if _env_vault else pathlib.Path(__file
 
 
 # Cheap heuristic: skip injection on prompts that are clearly pure coding /
-# syntax questions where the vault has nothing to add. The relevance floor
-# in search.py provides the real gate; this just avoids the embedding call.
+# syntax questions where the vault has nothing to add. The cosine gate
+# (config inject_min_cosine) is the real gate; this just avoids the embedding call.
 CODING_PATTERNS = [
     r"^\s*(how do i|how can i|what's the syntax|what is the syntax)\b.*\b(regex|regexp|sed|awk|grep|git|npm|yarn|pnpm|cargo|pip|poetry|docker|kubectl|make|jq|curl|ffmpeg)\b",
     r"^\s*(write|generate|give me)\s+(a|an)?\s*(function|method|class|snippet|regex|regexp|bash|shell|python|javascript|typescript|rust|go)\b",
@@ -92,28 +92,37 @@ def main() -> int:
         import hera_db  # type: ignore
         import search as _search  # type: ignore
 
+        import embed as _embed  # type: ignore
+
         conn = hera_db.connect()
-        top_n = int(conn.execute(
-            "SELECT value FROM config WHERE key='inject_top_n'"
-        ).fetchone()[0])
-        floor = float(conn.execute(
-            "SELECT value FROM config WHERE key='inject_relevance_floor'"
-        ).fetchone()[0])
+        cfg = dict(conn.execute("SELECT key, value FROM config").fetchall())
+        top_n = int(cfg.get("inject_top_n", 3))
+        floor = float(cfg.get("inject_relevance_floor", 0.015))
+        min_cos = float(cfg.get("inject_min_cosine", 0.65))
+        # Candidates beyond top_n, so the cosine gate below can drop weak ones
+        # without starving the result.
+        fetch_n = max(top_n * 4, 12)
 
-        hits = _search.hybrid_search(conn, prompt, top_n=top_n, floor=floor,
-                                     trust_in=INJECT_TRUST)
+        # One query embedding for both stores, with a budget that fits the
+        # 10 s hook timeout (no retry backoff: a dead Ollama fails fast).
+        qvec = _embed.embed_query(prompt, timeout=4.0, retries=1)
 
-        # Team side: same hybrid substrate over team.db, owner-tagged. Its own
-        # try/except so a broken team.db / dead Ollama degrades to local-only
-        # (the outer except is the final backstop). Team pages never enter
-        # hera.db — they live in a separate index (isolation invariant).
+        hits = _search.hybrid_search(conn, prompt, top_n=fetch_n, floor=floor,
+                                     trust_in=INJECT_TRUST, qvec=qvec)
+
+        # Team side: same hybrid substrate over team.db, owner-tagged — only
+        # when a team index exists (team_sync builds it), and opened without
+        # creating anything. Its own try/except so a broken team.db degrades
+        # to local-only. Team pages never enter hera.db (ADR-14).
         team_hits: list = []
         try:
             import team_index  # type: ignore
-            tconn = team_index.open_team_db()
-            team_hits = _search.team_hybrid_search(tconn, prompt, top_n=top_n,
-                                                    floor=floor,
-                                                    trust_in=INJECT_TRUST)
+            if team_index.TEAM_DB.exists():
+                tconn = hera_db.connect(team_index.TEAM_DB)
+                team_hits = _search.team_hybrid_search(tconn, prompt, top_n=fetch_n,
+                                                        floor=floor,
+                                                        trust_in=INJECT_TRUST,
+                                                        qvec=qvec)
         except Exception:
             team_hits = []
 
@@ -123,17 +132,22 @@ def main() -> int:
         for h in hits:
             merged.append({"title": h.title, "path": h.path,
                            "page_id": h.page_id, "score": h.score, "owner": None,
-                           "trust": getattr(h, "trust", "untrusted")})
+                           "trust": getattr(h, "trust", "untrusted"),
+                           "cosine": h.cosine})
         for t in team_hits:
             # Everything in team.db is team-tier by construction (ADR-14).
             merged.append({"title": t["title"], "path": t["path"],
                            "page_id": t["page_id"], "score": t["score"],
-                           "owner": t.get("owner"), "trust": "team"})
+                           "owner": t.get("owner"), "trust": "team",
+                           "cosine": t.get("cosine")})
 
         # Second gate. hybrid_search already filtered, but this list is the one
         # that becomes text in a privileged session, so it is re-checked here
         # rather than trusted.
         merged = [m for m in merged if m["trust"] in INJECT_TRUST]
+        # Relevance gate: a pointer needs real semantic similarity. Keyword-only
+        # matches (no dense candidate) and weak neighbours are noise.
+        merged = [m for m in merged if m["cosine"] is not None and m["cosine"] >= min_cos]
         if not merged:
             return 0
         merged.sort(key=lambda m: (-m["score"], m["title"]))

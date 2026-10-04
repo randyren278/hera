@@ -44,7 +44,7 @@ Co-locating the rule with its enforcement lets a maintainer grep from either dir
 
 ---
 
-## 2. ADR log (01-14)
+## 2. ADR log (01-15)
 
 One decision per row, stated as the decision (not the problem). The key decisions are expanded below the table (Context / Decision / Consequences). **Reference an ADR from prose by ID only** (e.g. "freeze-on-ingest (ADR-09)"); never paraphrase a decision in two places or the two copies will drift.
 
@@ -62,6 +62,7 @@ One decision per row, stated as the decision (not the problem). The key decision
 | ADR-10 | Conflict resolution surfacing | Origin-scoped, deferred-interactive; **four channels**; relevance-triggered (channel 3) is deliberately unscoped. | Accepted |
 | ADR-11 | Session work vs. external sources | Explicit session statements auto-win (auto-resolve as `resolved_new`); implications and external contradictions queue. | Accepted |
 | ADR-13 | Team space staging hygiene | Owner folder is named from `HERA_OWNER` (default `randy`), never the git author name; the staging clone ships a committed `.gitignore` so `git add -A` can't sweep OS junk into a publish. | Accepted |
+| ADR-15 | Embedding scheme + relevance gate | Vectors use nomic task prefixes and unit length (L2 KNN ≡ cosine); injection keeps a hit only if its cosine ≥ `inject_min_cosine` (0.65). The RRF floor no longer gates relevance. | Accepted |
 | ADR-14 | Team space retrieval | Team pages get the **same hybrid retrieval as local** (BM25 + dense + RRF), indexed by publisher ULID in a **separate `team.db`** (never `hera.db`), refreshed on sync and fused owner-tagged into injection. | Accepted |
 
 > **Terms used across this log.** *Hybrid search* = two rankers over one query — BM25 (keyword match over the FTS5 index) and dense-vector cosine (semantic) — merged with *Reciprocal Rank Fusion (RRF)*, which combines by each hit's rank *position*, not its raw score, so the two incomparable scales fuse cleanly. *ULID* = a page's permanent id (see [ONBOARDING.md § Glossary](ONBOARDING.md#glossary)). "ADR" throughout is an **Architecture Decision Record**.
@@ -144,15 +145,23 @@ flowchart LR
   Q --> D["dense cosine ranks (sqlite-vec)"]
   B --> F["RRF fuse (k=60)"]
   D --> F
-  F --> R(["ranked hits, floor 0.015"])
+  F --> R(["ranked hits; injection gates on cosine ≥ 0.65 (ADR-15)"])
 ```
 
 The **shape** is above; the **values** live in code and belong in prose, not a node:
 
 - `score(item) = Σ 1/(RRF_K + rank_i)`, summed over each substrate that ranked the page, with `RRF_K = 60` (module constant `RRF_K` in `scripts/search.py`). Ranks are 1-based positional, **not** the raw `bm25()`/distance values.
-- The relevance floor is **`0.015`** (`hybrid_search(..., floor=0.015)`, also seeded as `config.inject_relevance_floor`). RRF scores span about 0.0 to 0.03 for two sources at k=60, so `0.015` keeps hits ranked highly by at least one substrate. **Recalibrate the ranking before changing either constant.**
+- The RRF floor is **`0.015`** (`hybrid_search(..., floor=0.015)`, also seeded as `config.inject_relevance_floor`). It is **not** a relevance gate: any page ranked 1–6 by a single retriever scores ≥ 1/66 ≈ 0.0152 and clears it. Relevance for injection is gated by cosine (ADR-15).
 
-> Stale-doc note carried from the audit: the `search.py` module docstring header says `floor=0.15`; the signature default and body agree on `0.015`. **`0.015` is authoritative.**
+#### ADR-15: Embedding scheme and cosine relevance gate
+
+**Context.** Audit of the live vault (2026-10-03): off-topic prompts ("what is the weather like today", "thanks, looks good") injected three unrelated pages each, because the RRF floor passes any top-6 rank from one retriever and the BM25 query OR-ed stopwords. Vectors were stored raw (unprefixed, unnormalized), so sqlite-vec's default L2 distance was not cosine, and nomic-embed-text's `search_query:`/`search_document:` task prefixes were missing.
+
+**Decision.** `embed.embed_document` / `embed.embed_query` add the nomic prefixes and scale to unit length, so L2 KNN ranks exactly by cosine (`cos = 1 − d²/2`). The scheme name is recorded in `config.embed_scheme`; `scripts/reembed.py` rebuilds a legacy index atomically (install runs it with `--if-needed`; doctor FAILs on a mismatch). The injection hook keeps a pointer only if its cosine ≥ `config.inject_min_cosine` (default `0.65`); keyword-only hits are not injected. The FTS query drops stopwords.
+
+**Calibration.** On the live vault (316 pages), 10 on-topic prompts had top-hit cosines 0.72–0.84; 10 off-topic prompts never exceeded 0.62. `0.65` admits every on-topic top hit and no off-topic hit. Recalibrate (same method: labelled prompts against the live index) before changing it.
+
+**Consequences.** Injection is silent far more often, which is the point. A vault with no page on a topic injects nothing for it. Changing the embedding model or prefixes requires a new `SCHEME` and a re-embed.
 
 #### ULIDs are page addresses (ADR-01)
 

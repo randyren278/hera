@@ -77,7 +77,7 @@ A contradiction check only runs for a page whose target path **already exists** 
 
 ## 2. Hybrid search: `scripts/search.py`
 
-**Contract:** `hybrid_search(conn, query, top_n=3, floor=0.015, fetch=20) -> list[Hit]`, where `Hit = (page_id, title, path, score, fts_rank, vec_rank)`.
+**Contract:** `hybrid_search(conn, query, top_n=3, floor=0.015, fetch=20, trust_in=..., qvec=None) -> list[Hit]`, where `Hit = (page_id, title, path, score, fts_rank, vec_rank, trust, cosine)`. Pass `qvec` to reuse one query embedding across stores.
 
 Two retrievers run over the same query, each producing a ranked list; the lists are fused with Reciprocal Rank Fusion. The diagram shows the **shape**; the exact numbers are in the prose below it, because a node can't hold the arithmetic legibly.
 
@@ -93,7 +93,7 @@ flowchart LR
 
 **BM25 half (`_fts_hits`).** The query is tokenized with `re.findall(r"\w+", query)`; tokens shorter than 2 characters are dropped; each survivor is quoted as a phrase and OR-joined (`"a" OR "b"`), so it is a bag-of-words match on ANY term. It runs `bm25(pages_fts)` joined through `pages_fts_map` (rowid to page_id), ordered ascending, so **lower `bm25()` is better**. Any `sqlite3.OperationalError` returns `[]` (fail-safe); an empty token list returns `[]`.
 
-**Dense half (`_vec_hits`).** The query is embedded via `embed(query)` (Ollama `nomic-embed-text`, 768-dim, see [DATA-MODEL.md § embeddings](DATA-MODEL.md#5-embeddings)) and packed, then `SELECT page_id, distance FROM pages_vec WHERE embedding MATCH ? ORDER BY distance`, a sqlite-vec KNN where **lower distance is nearer**.
+**Dense half (`_vec_hits`).** The query is embedded via `embed_query(query)` (Ollama `nomic-embed-text`, 768-dim, `search_query:` prefix, unit length; pages are stored via `embed_document` with the `search_document:` prefix — ADR-15) and packed, then `SELECT page_id, distance FROM pages_vec WHERE embedding MATCH ? ORDER BY distance`, a sqlite-vec KNN where **lower distance is nearer**.
 
 **RRF fusion.** Ranks are **1-based positional** (position in each ordered list), not derived from the raw `bm25()` or `distance` values. For each page:
 
@@ -106,12 +106,9 @@ A page ranked by both retrievers gets both terms added; a page ranked by only on
 
 **Ties.** `_rrf_fuse` sorts by score alone (`key=lambda x: -x[1]`) with no secondary key, so two pages with an identical fused score keep their stable input order (FTS hits are added before dense hits). This differs from the cross-store merge in `prompt_inject.py`, which sorts by `(-score, title)` — there, an exact tie is broken alphabetically by title. If you depend on a reproducible top-N ordering, note this asymmetry: within a single store the tie order is incidental; across the local+team merge it is deterministic by title.
 
-**The floor is `0.015`** (the signature default). After sorting, only the top `top_n` are considered, and any hit with `score < 0.015` is skipped. The rationale: with two sources at `k=60`, RRF scores span roughly `0.0` to `0.03`, so `0.015` keeps hits ranked highly by at least one substrate and drops the weakly-fused tail.
+**The floor is `0.015`** (the signature default). After sorting, only the top `top_n` are considered, and any hit with `score < 0.015` is skipped. It only trims rank 7 and below — any page a single retriever ranks 1–6 clears it — so it is **not** a relevance gate. Each `Hit` carries `cosine` (similarity to the query, `None` if not a dense candidate); the injection hook keeps a hit only if `cosine ≥ inject_min_cosine` (ADR-15). The FTS query drops stopwords before OR-ing tokens.
 
 Finally, each surviving page is looked up with `... WHERE id = ? AND archived_at IS NULL`, so **archived or missing pages are skipped** and pruned pages never resurface in retrieval. At most `top_n` (default 3) hits return.
-
-> [!note]
-> The module docstring header says `floor=0.15`; that line is stale. The signature default and the docstring body both say `0.015`, and the code value `0.015` is authoritative. Fix the header if you touch this file; do not "fix" the code to match the stale comment.
 
 Both `RRF_K = 60` and the floor are calibrated against the two-retriever, `k=60` score distribution. Recalibrate the ranking before changing either.
 
@@ -258,7 +255,9 @@ Do not restate these values inline elsewhere; link here. Config defaults are see
 | Value | Where it lives | Constraint |
 |---|---|---|
 | RRF k | `RRF_K` in `scripts/search.py` | `= 60`; recalibrate ranking before changing |
-| Relevance floor | `hybrid_search(floor=...)` in `scripts/search.py`; seeded as `inject_relevance_floor` in `config` | `= 0.015`; recalibrate before changing |
+| RRF floor | `hybrid_search(floor=...)` in `scripts/search.py`; seeded as `inject_relevance_floor` in `config` | `= 0.015`; trims the tail only |
+| Injection relevance gate | `config.inject_min_cosine` | default `0.65`; calibrated on labelled prompts (ADR-15) |
+| Embedding scheme | `embed.SCHEME`, recorded in `config.embed_scheme` | change ⇒ `scripts/reembed.py` |
 | Inject top-N | `config.inject_top_n` | default `3` |
 | Prune min age | `config.prune_min_age_days` | default `30` days |
 | Prune band | `config.prune_pct_low` / `prune_pct_high` | defaults `40` / `70` |

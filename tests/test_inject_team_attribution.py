@@ -65,7 +65,7 @@ def _build_team_db(root: pathlib.Path, trust: str = "team") -> pathlib.Path:
                        (TEAM_TITLE, TEAM_BODY))
     conn.execute("INSERT INTO pages_fts_map(rowid, page_id) VALUES (?, ?)",
                  (cur.lastrowid, pid))
-    vec = _embed.embed(f"{TEAM_TITLE}\n{TEAM_BODY}")
+    vec = _embed.embed_document(f"{TEAM_TITLE}\n{TEAM_BODY}")
     conn.execute("INSERT INTO pages_vec(page_id, embedding) VALUES (?, ?)",
                  (pid, _embed.pack(vec)))
     conn.execute("INSERT INTO page_meta VALUES (?,?,'team',?,?)",
