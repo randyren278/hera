@@ -34,14 +34,23 @@ jobs:
       # Bootstrap .venv exactly the way install.py does, so CI also proves the
       # interpreter selection + pip reconcile path a fresh clone goes through.
       - name: Bootstrap .venv via the installer
+        # Load scripts/install/venv.py by path: `import venv` would be the
+        # stdlib module if the search path ever changed.
         run: |
-          python -c "import pathlib,sys; sys.path.insert(0,'scripts/install'); import venv; print(venv.ensure_venv(pathlib.Path('.').resolve()))"
+          python -c "import importlib.util as u,pathlib; s=u.spec_from_file_location('hera_venv','scripts/install/venv.py'); m=u.module_from_spec(s); s.loader.exec_module(m); print(m.ensure_venv(pathlib.Path('.').resolve()))"
 
       - name: Install Ollama + nomic-embed-text
         if: matrix.ollama
         run: |
           curl -fsSL https://ollama.com/install.sh | sh
-          for i in $(seq 1 30); do curl -sf http://localhost:11434/api/version && break; sleep 1; done
+          if ! curl -sf http://localhost:11434/api/version; then
+            (ollama serve > /tmp/ollama.log 2>&1 &)   # no systemd service on this runner
+          fi
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:11434/api/version && break
+            [ "$i" = 60 ] && { echo "ollama never came up"; cat /tmp/ollama.log 2>/dev/null; exit 1; }
+            sleep 1
+          done
           ollama pull nomic-embed-text
 
       - name: pytest

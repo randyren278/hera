@@ -56,7 +56,9 @@ reaches the shared repo without the human diff review.
    A `BLOCKED` line (likely secret) means push will refuse: fix the staged
    file, then show the diff again.
 4. On confirmation only: `python "<VAULT>/scripts/hera_cli.py" publish push -m "..." --confirm <t>`
-   with the token from the diff the human approved. Push refuses if the staged
+   with the token from the diff the human approved. The token is
+   tamper-evidence, not proof of approval: never run `push` in the same turn
+   as `diff` — the human's explicit "push" / "approve" reply must come between. Push refuses if the staged
    content changed since that diff — never re-run `diff` just to get a fresh
    token without showing the new diff to the human.
    On rejection: leave staging as-is; report what was staged and what was held back.
