@@ -182,6 +182,10 @@ def reindex(changed_only: bool = True) -> int:
 
     conn = open_team_db()
     files = _staged_pages()
+    # Vectors from an older embedding scheme never match current queries:
+    # rebuild everything once, then record the scheme.
+    if hera_db.embed_scheme(conn) != _embed.SCHEME:
+        changed_only = False
 
     # Map of page_id → stored mtime for change detection.
     stored: dict[str, float] = {}
@@ -213,6 +217,9 @@ def reindex(changed_only: bool = True) -> int:
             if pid not in seen_ids and not (REPO / rp).exists():
                 _drop_page(conn, pid)
 
+    with conn:
+        conn.execute("INSERT INTO config(key, value) VALUES ('embed_scheme', ?) "
+                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (_embed.SCHEME,))
     for w in warnings:
         sys.stderr.write(w + "\n")
     return indexed

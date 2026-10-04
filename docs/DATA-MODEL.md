@@ -223,6 +223,7 @@ Seeded by `DEFAULT_CONFIG` via `INSERT OR IGNORE`. Existing values are
 | `prune_min_age_days` | `"30"` | minimum page age to be prunable |
 | `inject_relevance_floor` | `"0.015"` | RRF tail trim (not a relevance gate) |
 | `inject_min_cosine` | `"0.65"` | prompt-inject relevance gate (ADR-15) |
+| `inject_strong_cosine` | `"0.72"` | cosine a hit needs without a keyword match (ADR-15) |
 | `embed_scheme` | set on create / by `reembed.py` | embedding scheme of stored vectors |
 | `inject_top_n` | `"3"` | number of pointer lines injected |
 | `lock_retries` | `"3"` | lock retry count |
@@ -239,7 +240,7 @@ Seeded by `DEFAULT_CONFIG` via `INSERT OR IGNORE`. Existing values are
 Which values are read by which engine:
 
 - `points_final` → `stop_score.py` (citation scoring).
-- `inject_top_n`, `inject_relevance_floor`, `inject_min_cosine` →
+- `inject_top_n`, `inject_relevance_floor`, `inject_min_cosine`, `inject_strong_cosine` →
   `prompt_inject.py`.
 - `prune_min_age_days`, `prune_pct_low`, `prune_pct_high` → `prune.py`.
 - `points_thinking` → loaded by `stop_score.py` but inert (Tier-1 disabled).

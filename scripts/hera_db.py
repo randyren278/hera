@@ -142,6 +142,9 @@ DEFAULT_CONFIG = {
     # on the live vault: on-topic prompts' top hits scored >= 0.72, off-topic
     # prompts' best hits <= 0.62. RRF scores carry no absolute relevance.
     "inject_min_cosine": "0.65",
+    # Without a keyword (BM25) match, a hit must be this close: short or
+    # entity-only prompts otherwise inject on embedding similarity alone.
+    "inject_strong_cosine": "0.72",
     "inject_top_n": "3",
     "lock_retries": "3",
     "lock_backoff_seconds": "1.6",
@@ -410,6 +413,19 @@ def doctor(verbose: bool = False) -> int:
     else:
         _fail(f"embedding scheme is {scheme or 'legacy'}, expected {_embed.SCHEME} — run "
               f"`{sys.executable} {REPO / 'scripts' / 'reembed.py'}`", state)
+
+    team_db = pathlib.Path(os.environ.get("HERA_TEAM_DB", REPO / "team.db"))
+    if team_db.exists():
+        try:
+            tconn = connect(team_db)
+            tscheme = embed_scheme(tconn)
+            has_vec = tconn.execute("SELECT 1 FROM pages_vec LIMIT 1").fetchone()
+            if has_vec and tscheme != _embed.SCHEME:
+                _fail(f"team.db embedding scheme is {tscheme or 'legacy'} — team pages never "
+                      f"pass the injection gate; run `{sys.executable} "
+                      f"{REPO / 'scripts' / 'team_index.py'} reindex --all`", state)
+        except sqlite3.Error as e:
+            _warn(f"team.db unreadable: {e}")
 
     # 4. sqlite-vec sanity.
     try:

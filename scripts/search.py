@@ -238,7 +238,7 @@ def team_hybrid_search(conn: sqlite3.Connection, query: str,
             continue
         out.append({"page_id": pid, "title": title, "path": path,
                     "owner": own, "source": source, "score": s,
-                    "cosine": cos.get(pid)})
+                    "cosine": cos.get(pid), "fts_rank": _ranks["fts"]})
         if len(out) >= top_n:
             break
     return out

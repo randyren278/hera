@@ -30,12 +30,12 @@ def filing(tmp_path, monkeypatch):
     db = tmp_path / "hera.db"
     monkeypatch.setattr(hera_db, "ensure_ready", lambda *a, **k: _init(db))
     calls: list[str] = []
-    state = {"fail": True}
+    state = {"fail": True, "exc": embed.EmbedError("ollama down")}
 
     def fake_ingest(path, source_kind="file", **_):
         calls.append(pathlib.Path(path).name)
         if state["fail"]:
-            raise embed.EmbedError("ollama down")
+            raise state["exc"]
         return types.SimpleNamespace(source=types.SimpleNamespace(title="t"),
                                      concepts=[], entities=[], warnings=[])
 
@@ -174,8 +174,22 @@ def test_near_empty_session_is_marked_filed_without_an_llm_call(filing):
 
 def test_retries_stop_after_max_attempts(filing):
     sef, tmp, calls, state, db = filing
+    state["exc"] = ValueError("extraction returned invalid JSON")  # permanent
     sef.run_filing(str(_transcript(tmp, "bad")), "sess-bad")  # attempt 1
     for _ in range(sef.MAX_ATTEMPTS + 3):
         sef.retry_pending()
     assert len(calls) == sef.MAX_ATTEMPTS
     assert _filed(db) == set()
+
+
+def test_transient_failures_do_not_use_up_attempts(filing):
+    """An Ollama outage or LLM quota across many session ends must not make a
+    session give up for good (council round 2, R2-7)."""
+    sef, tmp, calls, state, db = filing  # fake ingest raises EmbedError (transient)
+    sef.run_filing(str(_transcript(tmp, "t")), "sess-t")
+    for _ in range(sef.MAX_ATTEMPTS + 2):
+        sef.retry_pending()
+    assert sef._attempts("sess-t") == 0
+    assert sef._is_transient(RuntimeError("codex extraction failed: exit 1\nERROR: "
+                                          "You've hit your usage limit."))
+    assert not sef._is_transient(ValueError("extraction returned invalid JSON"))

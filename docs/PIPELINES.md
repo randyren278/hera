@@ -256,7 +256,7 @@ Do not restate these values inline elsewhere; link here. Config defaults are see
 |---|---|---|
 | RRF k | `RRF_K` in `scripts/search.py` | `= 60`; recalibrate ranking before changing |
 | RRF floor | `hybrid_search(floor=...)` in `scripts/search.py`; seeded as `inject_relevance_floor` in `config` | `= 0.015`; trims the tail only |
-| Injection relevance gate | `config.inject_min_cosine` | default `0.65`; calibrated on labelled prompts (ADR-15) |
+| Injection relevance gate | `config.inject_min_cosine`, `config.inject_strong_cosine` | defaults `0.65` / `0.72` (no-keyword hits need the latter); calibrated on labelled prompts (ADR-15); pinned by `tests/test_inject_gate.py` |
 | Embedding scheme | `embed.SCHEME`, recorded in `config.embed_scheme` | change ⇒ `scripts/reembed.py` |
 | Inject top-N | `config.inject_top_n` | default `3` |
 | Prune min age | `config.prune_min_age_days` | default `30` days |

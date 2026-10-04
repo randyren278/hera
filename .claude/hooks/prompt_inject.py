@@ -99,6 +99,7 @@ def main() -> int:
         top_n = int(cfg.get("inject_top_n", 3))
         floor = float(cfg.get("inject_relevance_floor", 0.015))
         min_cos = float(cfg.get("inject_min_cosine", 0.65))
+        strong_cos = float(cfg.get("inject_strong_cosine", 0.72))
         # Candidates beyond top_n, so the cosine gate below can drop weak ones
         # without starving the result.
         fetch_n = max(top_n * 4, 12)
@@ -133,21 +134,25 @@ def main() -> int:
             merged.append({"title": h.title, "path": h.path,
                            "page_id": h.page_id, "score": h.score, "owner": None,
                            "trust": getattr(h, "trust", "untrusted"),
-                           "cosine": h.cosine})
+                           "cosine": h.cosine, "keyword": h.fts_rank is not None})
         for t in team_hits:
             # Everything in team.db is team-tier by construction (ADR-14).
             merged.append({"title": t["title"], "path": t["path"],
                            "page_id": t["page_id"], "score": t["score"],
                            "owner": t.get("owner"), "trust": "team",
-                           "cosine": t.get("cosine")})
+                           "cosine": t.get("cosine"),
+                           "keyword": t.get("fts_rank") is not None})
 
         # Second gate. hybrid_search already filtered, but this list is the one
         # that becomes text in a privileged session, so it is re-checked here
         # rather than trusted.
         merged = [m for m in merged if m["trust"] in INJECT_TRUST]
-        # Relevance gate: a pointer needs real semantic similarity. Keyword-only
-        # matches (no dense candidate) and weak neighbours are noise.
-        merged = [m for m in merged if m["cosine"] is not None and m["cosine"] >= min_cos]
+        # Relevance gate (ADR-15): a pointer needs real semantic similarity,
+        # and — unless it is very close — a keyword match too. Keyword-only
+        # hits (no dense candidate) and weak neighbours are noise.
+        merged = [m for m in merged
+                  if m["cosine"] is not None and m["cosine"] >= min_cos
+                  and (m["keyword"] or m["cosine"] >= strong_cos)]
         if not merged:
             return 0
         merged.sort(key=lambda m: (-m["score"], m["title"]))
@@ -191,7 +196,7 @@ def main() -> int:
             else:
                 attribution = ""
             lines.append(
-                f"- {attribution}[[{m['title']}]]  ({abs_path})  — {one_line}")
+                f"- {attribution}[[{_clean(m['title'])}]]  ({abs_path})  — {_clean(one_line)}")
             for co, cn in conflicts_by_page.get(m["page_id"], []):
                 lines.append(f"    ⚠ contested — existing: {co} · new: {cn} · unresolved.")
         if len(lines) == 1:
@@ -201,6 +206,12 @@ def main() -> int:
         # Fail-open: swallow everything.
         pass
     return 0
+
+
+def _clean(text: str) -> str:
+    """Pointer fields are LLM-written page text: keep them to one plain line
+    so they cannot open links, code spans, or new lines in the session."""
+    return re.sub(r"\s+", " ", text.replace("[[", "").replace("]]", "").replace("`", "")).strip()
 
 
 def _first_line_from(path: pathlib.Path) -> str:

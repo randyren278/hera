@@ -107,6 +107,18 @@ def _attempts(session_id: str) -> int:
         return 0
 
 
+_TRANSIENT = re.compile(r"usage limit|rate.?limit|overloaded|timed? ?out|timeout|"
+                        r"connection (refused|reset)|not logged in|temporarily", re.I)
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """Failures that say nothing about the session itself (embedder down, LLM
+    quota or outage) — they never count toward MAX_ATTEMPTS."""
+    import embed  # type: ignore
+    return isinstance(exc, (embed.EmbedError, TimeoutError, ConnectionError)) \
+        or bool(_TRANSIENT.search(str(exc)))
+
+
 def _release(session_id: str) -> None:
     try:
         _claim_path(session_id).unlink()
@@ -190,16 +202,17 @@ def _file_scratch(conn, scratch: pathlib.Path, session_id: str) -> int:
         _mark_filed(conn, session_id)
         # ingest preserved the raw copy under wiki/.raw/; this one is redundant.
         scratch.unlink(missing_ok=True)
-    except Exception:
-        n = _attempts(session_id) + 1
+    except Exception as exc:
+        n = _attempts(session_id) + (0 if _is_transient(exc) else 1)
         try:
-            _attempts_path(session_id).write_text(str(n))
+            if n:
+                _attempts_path(session_id).write_text(str(n))
         except OSError:
             pass
         tb = traceback.format_exc()
         # Nested-CLI stderr can echo the whole extraction prompt (transcript
         # text); keep the log useful without copying the session into it.
-        _log(f"ingest error (session {session_id}, attempt {n}/{MAX_ATTEMPTS}; "
+        _log(f"ingest error (session {session_id}, permanent failures {n}/{MAX_ATTEMPTS}; "
              f"{'left pending for retry' if n < MAX_ATTEMPTS else 'giving up'}):\n"
              + (tb if len(tb) <= 3000 else tb[:1500] + "\n…[truncated]…\n" + tb[-1500:]))
         return 1

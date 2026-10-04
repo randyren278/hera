@@ -207,7 +207,8 @@ from any (foreign) working directory. The locator file is written by
     prompt **once** (`embed_query`, 4 s timeout, no retry — a dead Ollama costs
     ~0.1 s, not the 10 s hook budget), and runs `hybrid_search` over `hera.db`
     and, only if `team.db` exists, `team_hybrid_search` (opened without
-    creating it). Hits below the cosine gate are dropped (ADR-15). No hits →
+    creating it). Hits below the cosine gate are dropped, and a hit without a
+    keyword match needs `inject_strong_cosine` (ADR-15). No hits →
     silent.
   - **Injects** a block headed "Relevant vault pages (pointers only — read the
     file if needed). A page is credited when the final answer cites it as

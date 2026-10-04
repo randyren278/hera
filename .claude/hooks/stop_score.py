@@ -132,7 +132,13 @@ def _resolve_title(conn, title: str) -> str | None:
 
 
 def _score(conn, session_id: str, transcript_path: pathlib.Path) -> dict:
-    """Score every message from cursor forward. Returns a summary dict."""
+    """Score every message from cursor forward. Returns a summary dict.
+
+    Runs under BEGIN IMMEDIATE: the async Stop hook and the SessionEnd
+    catch-up can overlap, and both read the cursor before inserting."""
+    if conn.in_transaction:
+        conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
     row = conn.execute("SELECT cursor FROM session_cursors WHERE session_id = ?",
                        (session_id,)).fetchone()
     cursor = row[0] if row else 0

@@ -63,3 +63,17 @@ def test_owner_scope_excludes_other_owners_and_personal(team_vault):
     assert hits and all(h["source"] == "team" and h["owner"] == "casey" for h in hits), hits
     hits = _search(team_vault, "--owner", "randy", "retrieval")
     assert all(h["source"] == "team" and h["owner"] == "randy" for h in hits), hits
+
+
+def test_legacy_scheme_team_db_is_fully_reembedded(team_vault, tmp_path):
+    """A team.db indexed before the current embedding scheme would never pass
+    the injection gate; the next (changed-only) sync rebuilds every vector."""
+    sys.path.insert(0, str(REPO / "scripts"))
+    import hera_db
+    conn = hera_db.connect(tmp_path / "team.db")
+    conn.execute("DELETE FROM config WHERE key='embed_scheme'")
+    conn.commit()
+    r = team_vault(str(REPO / "scripts/team_index.py"), "reindex")  # changed-only
+    assert r.returncode == 0 and "indexed 2 " in r.stdout, r.stdout + r.stderr
+    import embed
+    assert hera_db.embed_scheme(hera_db.connect(tmp_path / "team.db")) == embed.SCHEME
