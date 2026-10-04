@@ -64,7 +64,5 @@ jobs:
           HERA_REQUIRE_OLLAMA: ${{ matrix.ollama && '1' || '0' }}
         run: .venv/bin/python -m pytest -q -ra
 
-      - name: Docs consistency
-        run: |
-          bash scripts/check_doc_links.sh
-          bash scripts/check_docs_consistency.sh
+      # The doc checkers (scripts/check_doc_links.sh etc.) are maintainer-local
+      # by design (.gitignore) and are not part of CI.

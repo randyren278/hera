@@ -46,7 +46,7 @@ def test_bootstrap_candidates_reach_homebrew_behind_a_shadowing_python(monkeypat
     import venv as venv_mod
     monkeypatch.setattr(venv_mod.shutil, "which",
                         lambda n: "/hostedtoolcache/Python/3.12/bin/python3" if n == "python3" else None)
-    real_exists = venv_mod.os.path.exists
-    monkeypatch.setattr(venv_mod.os.path, "exists",
-                        lambda p: p == "/opt/homebrew/bin/python3" or real_exists(p))
+    monkeypatch.setattr(venv_mod.os.path, "exists", lambda p: p == "/opt/homebrew/bin/python3")
+    # Candidates de-dup by realpath; keep the host's symlinks out of this test.
+    monkeypatch.setattr(venv_mod.os.path, "realpath", lambda p: p)
     assert "/opt/homebrew/bin/python3" in venv_mod._bootstrap_candidates()
