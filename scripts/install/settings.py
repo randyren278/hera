@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import time
 
 import hookcmd
@@ -82,6 +83,79 @@ def merge_settings(target: pathlib.Path, fragment: dict) -> None:
     _atomic_json(target, data)
 
 
+_HERA_SCRIPTS = tuple(f"/.claude/hooks/{s}" for s in hookcmd.HOOK_SCRIPTS.values()) + (
+    "/scripts/codex_hook.py",)
+_QUOTED = re.compile(r'^"[^"]+" "(?P<script>[^"]+)"(?: \w+)?$')
+LEGACY = "<legacy ~/.claude/hooks install>"
+
+
+def hera_hook_vault(command: str) -> str | None:
+    """The vault a Hera hook command runs from, or None if it isn't one.
+
+    Recognises the current POSIX/Windows command form, the Codex hook form, and
+    the legacy ``. ~/.claude/hera.env && … ~/.claude/hooks/…`` form (returned
+    as ``LEGACY`` because it carries no vault path)."""
+    if "/.claude/hera.env" in command and "/.claude/hooks/" in command:
+        return LEGACY
+    m = _QUOTED.match(command.strip())
+    if not m:
+        return None
+    script = m.group("script").replace("\\", "/")
+    for suffix in _HERA_SCRIPTS:
+        if script.endswith(suffix):
+            return script[: -len(suffix)]
+    return None
+
+
+def _norm_vault(p) -> str:
+    return os.path.normcase(str(p).replace("\\", "/").rstrip("/"))
+
+
+def hera_vaults_in_settings(target: pathlib.Path) -> list[str]:
+    """Sorted distinct vaults whose Hera hooks ``target`` registers."""
+    try:
+        data = json.loads(pathlib.Path(target).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    found = {hera_hook_vault(h.get("command", ""))
+             for groups in data.get("hooks", {}).values()
+             for g in groups for h in g.get("hooks", [])}
+    found.discard(None)
+    return sorted(found)
+
+
+def remove_other_vault_hooks(target: pathlib.Path, vault: pathlib.Path) -> list[str]:
+    """Drop Hera hook entries that point at any vault other than ``vault``.
+
+    Only entries recognised by ``hera_hook_vault`` are touched; a group left
+    empty is dropped. Returns the sorted distinct vaults removed."""
+    target = pathlib.Path(target)
+    if not target.exists():
+        return []
+    data = json.loads(target.read_text(encoding="utf-8"))
+    removed: set[str] = set()
+    hooks = data.get("hooks", {})
+    for ev, groups in list(hooks.items()):
+        kept_groups = []
+        for g in groups:
+            entries = []
+            for h in g.get("hooks", []):
+                owner = hera_hook_vault(h.get("command", ""))
+                if owner is not None and _norm_vault(owner) != _norm_vault(vault):
+                    removed.add(owner)
+                else:
+                    entries.append(h)
+            if entries:
+                kept_groups.append({**g, "hooks": entries})
+        if kept_groups:
+            hooks[ev] = kept_groups
+        else:
+            del hooks[ev]
+    if removed:
+        _atomic_json(target, data)
+    return sorted(removed)
+
+
 def strip_our_hooks(target: pathlib.Path, fragment: dict) -> str:
     """Remove every hook-group matching ``fragment`` from ``target``. Deletes the
     file if our hooks were its sole content. Returns a status string; no-op if
@@ -112,7 +186,7 @@ def strip_our_hooks(target: pathlib.Path, fragment: dict) -> str:
     return "stripped Hera hook entries from settings.json"
 
 
-# --- backup / restore ------------------------------------------------------
+# --- backup ------------------------------------------------------
 
 def backup_file(src: pathlib.Path) -> pathlib.Path | None:
     """Copy ``src`` to ``src.hera-backup.<timestamp>``. Returns the backup path,
@@ -128,21 +202,6 @@ def backup_file(src: pathlib.Path) -> pathlib.Path | None:
         dst = src.with_name(src.name + f".hera-backup.{ts}.{n}")
     dst.write_bytes(src.read_bytes())
     return dst
-
-
-def restore_latest_backup(target: pathlib.Path) -> bool:
-    """Restore the most-recent ``target.hera-backup.*`` to ``target``.
-    Returns False if no backup exists."""
-    target = pathlib.Path(target)
-    backups = sorted(
-        target.parent.glob(target.name + ".hera-backup.*"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    if not backups:
-        return False
-    target.write_bytes(backups[0].read_bytes())
-    return True
 
 
 def _atomic_json(path: pathlib.Path, data: dict) -> None:

@@ -238,7 +238,27 @@ def _events_referencing_vault(settings_path: pathlib.Path, vault: pathlib.Path) 
     return found
 
 
-def _doctor_hooks() -> None:
+def _doctor_global_conflicts(home_settings: pathlib.Path, state: dict) -> None:
+    """FAIL when another vault's hooks are also registered, or when the locator
+    names a different vault: either way two vaults' hooks/skills disagree and
+    every session double-injects or files into the wrong place."""
+    sys.path.insert(0, str(REPO / "scripts" / "install"))
+    import locator
+    import settings as settings_mod
+    here = settings_mod._norm_vault(REPO)
+    others = [v for v in settings_mod.hera_vaults_in_settings(home_settings)
+              if settings_mod._norm_vault(v) != here]
+    if others:
+        _fail(f"hooks from another vault also registered in {home_settings}: {others} "
+              f"— re-run `python {REPO / 'install.py'}` to make this the only active vault",
+              state)
+    loc = locator.parse_locator(_claude_home() / "hera.env").get("HERA_VAULT")
+    if loc and settings_mod._norm_vault(pathlib.Path(loc).expanduser()) != here:
+        _fail(f"locator {_claude_home() / 'hera.env'} points at {loc}, not this vault "
+              f"— re-run `python {REPO / 'install.py'}`", state)
+
+
+def _doctor_hooks(state: dict | None = None) -> None:
     """Report hook registration, aware of BOTH install modes (global + local).
 
     Global: ~/.claude/settings.json holds absolute commands pointing at this
@@ -246,10 +266,12 @@ def _doctor_hooks() -> None:
     ~/.claude/settings.json that registers *some other* vault's hooks is not
     this vault's registration — hence the vault-path match, not a key check.
     """
+    state = state if state is not None else {"fail": False}
     home_settings = _claude_home() / "settings.json"
     global_events = _events_referencing_vault(home_settings, REPO)
     if global_events:
         _ok(f"hooks registered globally ({home_settings}): {global_events}")
+        _doctor_global_conflicts(home_settings, state)
         return
 
     # Fall back to the project-local install mode.
@@ -393,7 +415,7 @@ def doctor(verbose: bool = False) -> int:
     #    - project-local: hooks live in the vault's own .claude/settings.json.
     # Prefer the global signal (commands referencing this vault), then fall
     # back to the local file, else report an informative — not alarming — note.
-    _doctor_hooks()
+    _doctor_hooks(state)
 
     return 1 if state["fail"] else 0
 

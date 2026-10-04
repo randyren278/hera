@@ -66,6 +66,7 @@ def install(vault: pathlib.Path, names: list[str], claude_locator: pathlib.Path)
         else:
             link.symlink_to(claude_locator)
     hooks = target / "hooks.json"
+    settings.remove_other_vault_hooks(hooks, vault)
     settings.merge_settings(hooks, fragment(vault))
     guidance = target / "hera" / "AGENTS.md"
     guidance.parent.mkdir(parents=True, exist_ok=True)

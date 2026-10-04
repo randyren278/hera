@@ -76,3 +76,50 @@ def test_no_registration_but_disabled_gives_honest_message(tmp_path, monkeypatch
     out = capsys.readouterr().out
     assert "not registered for THIS vault" in out
     assert "install.py" in out
+
+
+# --------------------------------------------------------------------------
+# another vault's hooks / locator drift — the double-fire misconfiguration
+# --------------------------------------------------------------------------
+
+def _add_vault_hooks(settings: pathlib.Path, vault: pathlib.Path) -> None:
+    sys.path.insert(0, str(REPO / "scripts" / "install"))
+    import settings as settings_mod
+    settings_mod.merge_settings(settings, settings_mod.build_fragment(vault))
+
+
+def test_other_vault_hooks_fail_doctor(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    home.mkdir()
+    settings = home / "settings.json"
+    _add_vault_hooks(settings, REPO)
+    _add_vault_hooks(settings, tmp_path / "second brain" / "hera")
+    monkeypatch.setenv("CLAUDE_HOME", str(home))
+    state = {"fail": False}
+    hera_db._doctor_hooks(state)
+    out = capsys.readouterr().out
+    assert state["fail"] is True
+    assert "second brain" in out and "install.py" in out
+
+
+def test_single_vault_install_passes(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    home.mkdir()
+    _add_vault_hooks(home / "settings.json", REPO)
+    (home / "hera.env").write_text(f'HERA_VAULT="{REPO}"\n', encoding="utf-8")
+    monkeypatch.setenv("CLAUDE_HOME", str(home))
+    state = {"fail": False}
+    hera_db._doctor_hooks(state)
+    assert state["fail"] is False, capsys.readouterr().out
+
+
+def test_locator_pointing_elsewhere_fails(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    home.mkdir()
+    _add_vault_hooks(home / "settings.json", REPO)
+    (home / "hera.env").write_text('HERA_VAULT="/somewhere/else"\n', encoding="utf-8")
+    monkeypatch.setenv("CLAUDE_HOME", str(home))
+    state = {"fail": False}
+    hera_db._doctor_hooks(state)
+    out = capsys.readouterr().out
+    assert state["fail"] is True and "/somewhere/else" in out

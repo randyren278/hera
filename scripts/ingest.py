@@ -652,10 +652,10 @@ def ingest_source(source_path: str, source_kind: str = "file",
     # run a contradiction check against its current body. On verdict=contradiction,
     # freeze the target (do not write, do not upsert), enqueue a conflict row.
     origin_cwd = os.environ.get("HERA_ORIGIN_CWD") or os.getcwd()
-    # Normalize so the SessionStart conflict-scope query (which normalizes the
-    # session cwd identically) matches on every OS — Windows case/separator drift
+    # Canonicalize so the SessionStart conflict-scope query matches on every
+    # OS. macOS /tmp→/private/tmp aliases and Windows case/separator drift
     # would otherwise make the `origin_cwd = ?` equality silently miss.
-    origin_cwd = os.path.normcase(os.path.normpath(origin_cwd))
+    origin_cwd = os.path.normcase(os.path.realpath(os.path.normpath(origin_cwd)))
     frozen: set[str] = set()  # page_ids we chose to freeze
     result_warnings: list[str] = list(data.get("warnings", []) or [])
 

@@ -6,7 +6,7 @@ orchestration. Works on POSIX and native Windows (no bash, no symlinks).
 
   python install.py                    install (idempotent; safe to re-run)
   python install.py --dry-run          print every action without executing
-  python install.py --uninstall        remove global hooks/skills, restore backup
+  python install.py --uninstall        remove this vault's global hooks/skills
   python install.py --with-global-claudemd
                                        append vault CLAUDE.md into ~/.claude/CLAUDE.md
   python install.py --install-ollama   install/start Ollama without prompting
@@ -253,6 +253,10 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
             backup = settings_mod.backup_file(global_settings)
             if backup:
                 ui.info(f"backed up existing settings.json → {backup}")
+        # One machine, one active vault: hooks left by an install from another
+        # path would otherwise keep firing alongside ours (double inject/file).
+        for other in settings_mod.remove_other_vault_hooks(global_settings, VAULT):
+            ui.warn(f"removed Hera hooks of another vault: {other}")
         settings_mod.merge_settings(global_settings, fragment)
         ui.info("merged.")
 
@@ -342,20 +346,15 @@ def do_uninstall(dry: bool) -> int:
         removed = registration.unregister_skills(VAULT, global_skills, home)
         ui.info(f"removed {removed} skill dir(s)")
 
-    # Step 2: restore settings.json from backup, or strip our entries.
-    ui.step("step 2/5: restore settings.json")
+    # Step 2: strip our hook entries. Never restore a backup over the live
+    # file: it predates every settings change made since install.
+    ui.step("step 2/5: strip Hera hooks from settings.json")
     if dry:
-        ui.info(f"[dry] restore latest backup of {global_settings} or strip our hooks")
+        ui.info(f"[dry] strip this vault's hooks from {global_settings}")
     else:
         import settings as settings_mod
         fragment = settings_mod.build_fragment(VAULT, os.name)
-        if settings_mod.restore_latest_backup(global_settings):
-            ui.info(f"restored {global_settings} from backup")
-            settings_mod.strip_our_hooks(global_settings, fragment)
-        elif global_settings.exists():
-            settings_mod.strip_our_hooks(global_settings, fragment)
-        else:
-            ui.info("no settings.json and no backup — nothing to restore")
+        ui.info(settings_mod.strip_our_hooks(global_settings, fragment))
 
     # Step 3: remove locator.
     ui.step("step 3/5: remove locator")

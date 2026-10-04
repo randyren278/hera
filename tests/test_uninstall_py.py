@@ -67,3 +67,67 @@ def test_uninstall_preserves_foreign_settings(vault_env):
     cmds = [h["command"] for g in data["hooks"].get("SessionStart", []) for h in g["hooks"]]
     assert "foreign-tool" in cmds
     assert not any(".venv" in c for c in cmds), "our hook command should be stripped"
+
+
+def test_uninstall_keeps_settings_changed_after_install(vault_env):
+    """Settings the user changed AFTER install survive uninstall.
+
+    Regression: uninstall used to copy the newest settings.json.hera-backup.*
+    over settings.json, silently reverting every change made since install
+    (new hooks, statusline, permissions).
+    """
+    run, home = vault_env["run"], vault_env["home"]
+    home.mkdir(parents=True, exist_ok=True)
+    settings = home / "settings.json"
+    settings.write_text(json.dumps({"model": "old"}) + "\n", encoding="utf-8")
+
+    assert run().returncode == 0
+    data = _read_json(settings)
+    data["model"] = "new"
+    data["statusLine"] = {"type": "command", "command": "added-later"}
+    settings.write_text(json.dumps(data) + "\n", encoding="utf-8")
+
+    assert run("--uninstall").returncode == 0
+    data = _read_json(settings)
+    assert data["model"] == "new"
+    assert data["statusLine"]["command"] == "added-later"
+    assert not any(".venv" in h["command"]
+                   for groups in data.get("hooks", {}).values()
+                   for g in groups for h in g["hooks"])
+    # Backups are left on disk for manual recovery, never deleted.
+    assert list(home.glob("settings.json.hera-backup.*"))
+
+
+def test_uninstall_ignores_polluted_backup(vault_env):
+    """A newest backup that already contains Hera hooks can't resurrect them."""
+    run, home = vault_env["run"], vault_env["home"]
+    home.mkdir(parents=True, exist_ok=True)
+    settings = home / "settings.json"
+    settings.write_text(json.dumps({"hooks": {"PreToolUse": [
+        {"hooks": [{"type": "command", "command": "users-own-hook"}]}]}}) + "\n",
+        encoding="utf-8")
+    assert run().returncode == 0
+    (home / "settings.json.hera-backup.99999999-999999").write_text(
+        settings.read_text(encoding="utf-8"), encoding="utf-8")
+
+    assert run("--uninstall").returncode == 0
+    text = settings.read_text(encoding="utf-8")
+    assert "users-own-hook" in text
+    assert ".claude/hooks/" not in text
+
+
+def test_install_supersedes_other_vault(vault_env, tmp_path):
+    """Installing vault B removes hooks a previous install of vault A left."""
+    run, home = vault_env["run"], vault_env["home"]
+    import sys
+    sys.path.insert(0, str(vault_env["vault"] / "scripts" / "install"))
+    import settings as settings_mod
+    other = tmp_path / "other vault"
+    settings_mod.merge_settings(home / "settings.json",
+                                settings_mod.build_fragment(other))
+
+    r = run()
+    assert r.returncode == 0, r.stderr
+    assert "other vault" in r.stdout  # the user is told what was replaced
+    vaults = settings_mod.hera_vaults_in_settings(home / "settings.json")
+    assert vaults == [vault_env["vault"].as_posix()]

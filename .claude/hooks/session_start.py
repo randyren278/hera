@@ -39,10 +39,10 @@ def main() -> int:
         except json.JSONDecodeError:
             evt = {}
         cwd = evt.get("cwd") or os.getcwd()
-        # Normalize for the conflict-scope equality match: origin_cwd is stored
-        # normalized (ingest.py), so query with the same normalization or the
-        # `=` comparison silently misses on Windows (case/separator drift).
-        cwd = os.path.normcase(os.path.normpath(cwd))
+        # Canonicalize for the conflict-scope equality match.  In particular,
+        # macOS shells may report /tmp while Python stores /private/tmp; a
+        # normpath-only comparison silently misclassifies that as elsewhere.
+        cwd = os.path.normcase(os.path.realpath(os.path.normpath(cwd)))
 
         pieces: list[str] = []
 

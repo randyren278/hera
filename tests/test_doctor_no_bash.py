@@ -18,9 +18,11 @@ def test_preflight_module_importable_and_callable():
     assert hasattr(preflight, "run_preflight")
 
 
-def test_doctor_uses_python_preflight_not_bash(monkeypatch, capsys):
+def test_doctor_uses_python_preflight_not_bash(monkeypatch, capsys, tmp_path):
     """With bash hidden AND the python preflight forced green, doctor's
     preflight step must succeed via Python and never shell out to bash."""
+    # Hermetic: the developer's real ~/.claude must not decide this test.
+    monkeypatch.setenv("CLAUDE_HOME", str(tmp_path))
     # Hide bash entirely.
     real_which = shutil.which
     monkeypatch.setattr(shutil, "which", lambda n: None if n == "bash" else real_which(n))

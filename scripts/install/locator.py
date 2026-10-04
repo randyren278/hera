@@ -17,7 +17,7 @@ import re
 
 HEADER = [
     "# Hera vault locator — written by install.py",
-    "# Read by global hooks in ~/.claude/hooks/ and by the hera-* skills.",
+    "# Read by the hera-* skills and engines to find this vault.",
 ]
 
 # Lines this module owns and rewrites on every run. Everything else is carried
@@ -27,7 +27,7 @@ HEADER = [
 _MANAGED_RE = re.compile(
     r"^\s*(?:export\s+)?HERA_VAULT\s*=|"
     r"^\s*#\s*Hera vault locator|"
-    r"^\s*#\s*Read by global hooks"
+    r"^\s*#\s*Read by (?:global hooks|the hera-\* skills)"
 )
 
 
