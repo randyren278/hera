@@ -44,6 +44,14 @@ from the vault directory you cloned; `python install.py` creates the locator.
    user** before re-running `python "<VAULT>/install.py" --install-ollama`: it
    runs Ollama's official installer, which may prompt for sudo. Run without a
    terminal, `install.py` never installs Ollama on its own.
+   **Make it survive reboots.** An `ollama serve` that install.py (or the
+   filing worker) starts lasts only until logout. Tell the user the persistent
+   command for their OS — macOS + Homebrew: `brew services start ollama`
+   (first stop any running `ollama serve`, or the service shows `error` because
+   port 11434 is taken; if Homebrew says the Xcode license isn't accepted, the
+   user runs `sudo xcodebuild -license accept` themselves); macOS app: keep
+   "Launch at login" on; Linux: `sudo systemctl enable --now ollama`; Windows:
+   the Ollama app starts at login.
 
 5. **Hooks — verify, never hand-edit.** `python "<VAULT>/install.py"` is the
    only thing that wires hooks: it writes absolute-path entries into the global
