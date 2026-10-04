@@ -31,6 +31,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      # setup-python's macOS build has sqlite extension loading compiled out —
+      # exactly the machine install.py must cope with by finding Homebrew's.
+      - name: Ensure a Homebrew python3 (macOS)
+        if: runner.os == 'macOS'
+        run: test -x /opt/homebrew/bin/python3 || brew install python
+
       # Bootstrap .venv exactly the way install.py does, so CI also proves the
       # interpreter selection + pip reconcile path a fresh clone goes through.
       - name: Bootstrap .venv via the installer

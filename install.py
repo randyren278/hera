@@ -57,8 +57,12 @@ def _find_capable_python() -> str | None:
     interpreter (we already know it's incapable when this is called)."""
     here = os.path.realpath(sys.executable) if sys.executable else ""
     seen: set[str] = set()
-    for name in ("python3", "python", "python3.13", "python3.12", "python3.11"):
-        p = shutil.which(name)
+    names = [shutil.which(n) for n in ("python3", "python", "python3.14", "python3.13",
+                                       "python3.12", "python3.11")]
+    # Homebrew's capable python3 is often shadowed on PATH by a python.org build.
+    names += [p for p in ("/opt/homebrew/bin/python3", "/usr/local/bin/python3")
+              if os.path.exists(p)]
+    for p in names:
         if not p:
             continue
         rp = os.path.realpath(p)

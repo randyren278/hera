@@ -49,15 +49,21 @@ def _has_extension_loading(python: str) -> bool:
 def _bootstrap_candidates() -> list[str]:
     """Interpreters to try when creating the venv, best-first.
 
-    Start with the interpreter running this script, then any python3/python on
-    PATH. No hardcoded platform paths.
+    Start with the interpreter running this script, then python3/python and
+    versioned names on PATH, then the standard Homebrew/system locations: on
+    macOS a python.org (or CI setup-python) build without sqlite extension
+    loading often shadows Homebrew's capable python3 on PATH.
     """
     cands: list[str] = []
     if sys.executable:
         cands.append(sys.executable)
-    for name in ("python3", "python"):
+    for name in ("python3", "python", "python3.14", "python3.13", "python3.12",
+                 "python3.11", "python3.10"):
         p = shutil.which(name)
         if p:
+            cands.append(p)
+    for p in ("/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"):
+        if os.path.exists(p):
             cands.append(p)
     # De-dup, preserve order.
     seen: set[str] = set()
