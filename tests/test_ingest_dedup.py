@@ -130,3 +130,25 @@ def test_failure_mid_ingest_leaves_no_orphan_pages(vault):
                          if ".raw" not in p.parts)
     assert after_files == [f for f in before_files if ".raw" not in f.parts]
     assert entity.read_text() == before_entity
+
+
+def test_index_md_lists_each_title_once(vault):
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    ingest.ingest_source(str(_write_source_file(root)), conn=conn)
+    ingest.ingest_source(str(_write_source_file(root, "again.txt")), conn=conn)
+    lines = [l for l in (root / "wiki" / "index.md").read_text().splitlines()
+             if l.startswith("- [[")]
+    assert len(lines) == len(set(l.split("]]")[0] for l in lines)), lines
+
+
+def test_case_variant_title_reuses_the_existing_page(vault):
+    """APFS/NTFS are case-insensitive: "auto-waiting" must not become a second
+    DB row for the file "Auto-Waiting.md"."""
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    ingest.ingest_source(str(_write_source_file(root)), conn=conn)
+    _stub_extract(mp, "auto-waiting", "Playwright")
+    ingest.ingest_source(str(_write_source_file(root, "again.txt")), conn=conn)
+    rows = conn.execute("SELECT path FROM pages WHERE type='concept'").fetchall()
+    assert rows == [("wiki/concepts/Auto-Waiting.md",)]

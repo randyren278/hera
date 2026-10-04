@@ -214,12 +214,15 @@ def _existing_page_at(conn, path: pathlib.Path) -> tuple[str, str] | None:
     except ValueError:
         # Path outside REPO — cannot correspond to a vault page.
         return None
+    # NOCASE: "auto-waiting" and "Auto-Waiting" are one page (and one file on
+    # APFS/NTFS). The stored path's own case is what ingest then writes to.
     row = conn.execute(
-        "SELECT id FROM pages WHERE path = ? AND archived_at IS NULL",
+        "SELECT id, path FROM pages WHERE path = ? COLLATE NOCASE AND archived_at IS NULL",
         (rel,),
     ).fetchone()
     if not row:
         return None
+    path = REPO / row[1]
     if not path.exists():
         return None
     body = path.read_text(encoding="utf-8", errors="replace")
@@ -517,12 +520,17 @@ def _update_index(conn, result: Result) -> None:
         header = (_frontmatter(str(ulid.new()), "Index", "meta")
                   + "# Index\n\nEvery page, one line each.\n\n")
         idx.write_text(header)
-    new_lines = []
-    for p in [result.source] + result.concepts + result.entities:
-        new_lines.append(f"- [[{p.title}]] — {_one_line(p.body_md)}")
+    entries = {p.title: f"- [[{p.title}]] — {_one_line(p.body_md)}"
+               for p in [result.source] + result.concepts + result.entities}
     with locks.lock(idx, page_id=str(ulid.new()), conn=conn, allow_delta=False):
-        with idx.open("a", encoding="utf-8") as f:
-            f.write("\n".join(new_lines) + "\n")
+        # One line per title: a re-ingested page updates its line in place.
+        lines = idx.read_text(encoding="utf-8").splitlines()
+        for i, line in enumerate(lines):
+            for title in list(entries):
+                if line.startswith(f"- [[{title}]]"):
+                    lines[i] = entries.pop(title)
+        lines += entries.values()
+        idx.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _one_line(body: str) -> str:
@@ -679,6 +687,9 @@ def ingest_source(source_path: str, source_kind: str = "file",
             existing = _existing_page_at(conn, pw.path)
             if existing:
                 old_id, old_body = existing
+                # Keep the existing file's name (case) and title.
+                row = conn.execute("SELECT path, title FROM pages WHERE id=?", (old_id,)).fetchone()
+                pw.path, pw.title = REPO / row[0], row[1]
                 # Reuse the existing page's ULID so a non-conflicting re-ingest
                 # UPDATES the row in place (ON CONFLICT(id)) instead of minting a
                 # fresh ULID and inserting a second row at the same path (path has
