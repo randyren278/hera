@@ -378,7 +378,8 @@ def doctor(verbose: bool = False) -> int:
 
     # 5. Ollama ping.
     try:
-        with urllib.request.urlopen("http://localhost:11434/api/version", timeout=2) as r:
+        ollama = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+        with urllib.request.urlopen(f"{ollama}/api/version", timeout=2) as r:
             v = r.read().decode()
         _ok(f"ollama {v.strip()}")
     except Exception as e:
@@ -406,6 +407,19 @@ def doctor(verbose: bool = False) -> int:
         _warn(f"pending_deltas ({orphans_row} unmerged)")
     else:
         _ok("pending_deltas (0 unmerged)")
+
+    # 7b. Sessions whose filing failed and await retry_pending().
+    try:
+        sys.path.insert(0, str(REPO / ".claude" / "hooks"))
+        import session_end_file
+        n = len(session_end_file._pending(conn))
+        if n:
+            _warn(f"unfiled sessions ({n}) — retried automatically at the next "
+                  "session end; see .hera/filing.log")
+        else:
+            _ok("unfiled sessions (0)")
+    except Exception as e:
+        _warn(f"unfiled-session scan failed: {e}")
 
     # 8. Scorer log freshness — flag if it has grown in the last hour.
     if SCORER_LOG.exists():

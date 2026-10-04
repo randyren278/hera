@@ -111,3 +111,9 @@ def test_ingest_checks_embedder_before_writing(tmp_path, monkeypatch):
                              raw_dir=tmp_path / "raw")
     assert not (tmp_path / "wiki").exists()
     assert not (tmp_path / "raw").exists()
+
+
+def test_pending_lists_only_failed_sessions(filing):
+    sef, tmp, calls, state, db = filing
+    sef.run_filing(str(_transcript(tmp, "d")), "sess-d")
+    assert [sid for sid, _ in sef._pending(_init(db))] == ["sess-d"]
