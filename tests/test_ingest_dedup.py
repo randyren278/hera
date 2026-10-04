@@ -94,3 +94,39 @@ def test_reingest_non_conflicting_keeps_one_row_per_path(vault):
         "SELECT count(*) FROM pages_vec v JOIN pages p ON p.id=v.page_id "
         "WHERE p.archived_at IS NULL").fetchone()[0]
     assert pages == fts == vec, f"index drift: pages={pages} fts={fts} vec={vec}"
+
+
+def test_failure_mid_ingest_leaves_no_orphan_pages(vault):
+    """An exception after page files are written (Ollama dying, LLM quota on
+    the contradiction check) must not leave unindexed pages in wiki/, and an
+    existing page it had already rewritten gets its old text back."""
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    ingest.ingest_source(str(_write_source_file(root)), conn=conn)
+    entity = root / "wiki" / "entities" / "Playwright.md"
+    before_entity = entity.read_text()
+    before_files = sorted(p.relative_to(root) for p in (root / "wiki").rglob("*.md"))
+
+    payload = {
+        "source": {"title": "Second Brief", "one_line": "x", "key_takeaways": [], "body": "b"},
+        "concepts": [{"title": "Brand New Concept", "one_line": "n", "body": "nb", "aliases": []}],
+        "entities": [{"title": "Playwright", "kind": "tool", "one_line": "changed",
+                      "body": "rewritten body", "aliases": []}],
+        "warnings": [],
+    }
+    mp.setattr(ingest, "_call_claude_extract", lambda raw: payload)
+    real_index = ingest._index_page_search
+
+    def dies_on_concept(c, pw):
+        if pw.title == "Brand New Concept":
+            raise ingest._embed.EmbedError("ollama died mid-run")
+        return real_index(c, pw)
+
+    mp.setattr(ingest, "_index_page_search", dies_on_concept)
+    with pytest.raises(ingest._embed.EmbedError):
+        ingest.ingest_source(str(_write_source_file(root, "second.txt")), conn=conn)
+
+    after_files = sorted(p.relative_to(root) for p in (root / "wiki").rglob("*.md")
+                         if ".raw" not in p.parts)
+    assert after_files == [f for f in before_files if ".raw" not in f.parts]
+    assert entity.read_text() == before_entity

@@ -173,3 +173,15 @@ def test_vault_path_prefix_is_not_a_match(tmp_path):
     home = tmp_path / "home"
     _write_global_settings(home, tmp_path / "hera-old", ["SessionStart"])
     assert hera_db._events_referencing_vault(home / "settings.json", tmp_path / "hera") == []
+
+
+def test_doctor_lists_orphan_pages(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(hera_db, "REPO", tmp_path)
+    monkeypatch.setattr(hera_db, "WIKI", tmp_path / "wiki")
+    (tmp_path / "wiki" / "sources").mkdir(parents=True)
+    (tmp_path / "wiki" / "sources" / "Lost.md").write_text("---\nid: X\n---\n")
+    conn = hera_db.ensure_ready(tmp_path / "h.db")
+    monkeypatch.setattr(hera_db, "ensure_ready", lambda *a, **k: conn)
+    monkeypatch.setenv("CLAUDE_HOME", str(tmp_path / "home"))
+    hera_db.doctor()
+    assert "orphan pages (1)" in capsys.readouterr().out

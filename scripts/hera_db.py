@@ -439,6 +439,22 @@ def doctor(verbose: bool = False) -> int:
     else:
         _ok("pending_deltas (0 unmerged)")
 
+    # 7a. Orphan pages: Markdown in wiki/ that no pages row points at (left by
+    #     an ingest that failed before this build's write journal existed).
+    #     They are never searched; the user decides whether to delete them.
+    if WIKI.exists():
+        indexed = {r[0] for r in conn.execute("SELECT path FROM pages")}
+        orphans = sorted(p.relative_to(REPO).as_posix()
+                         for sub in ("sources", "concepts", "entities", "questions")
+                         for p in (WIKI / sub).glob("*.md")
+                         if p.relative_to(REPO).as_posix() not in indexed)
+        if orphans:
+            _warn(f"orphan pages ({len(orphans)}) not in the index, never searched: "
+                  + "; ".join(orphans[:5]) + (" …" if len(orphans) > 5 else "")
+                  + " — `scripts/reindex_orphans.py --apply` indexes them")
+        else:
+            _ok("orphan pages (0)")
+
     # 7b. Sessions whose filing failed and await retry_pending().
     try:
         sys.path.insert(0, str(REPO / ".claude" / "hooks"))
