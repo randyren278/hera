@@ -181,8 +181,17 @@ WARN_PATTERNS = [
 
 
 def scan_diff(diff: str) -> tuple[list[str], list[str]]:
-    """(blocking, warnings) findings on the diff's added lines."""
-    added = [l[1:] for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++")]
+    """(blocking, warnings) findings on the diff's added lines. Only lines
+    inside a hunk count: a file's '+++ b/path' header precedes its first '@@',
+    so an added line that itself starts with '++' is still scanned."""
+    added, in_hunk = [], False
+    for l in diff.splitlines():
+        if l.startswith("diff --git "):
+            in_hunk = False
+        elif l.startswith("@@"):
+            in_hunk = True
+        elif in_hunk and l.startswith("+"):
+            added.append(l[1:])
     def hits(patterns):
         out = []
         for name, rx in patterns:

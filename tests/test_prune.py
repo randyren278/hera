@@ -93,3 +93,12 @@ def test_crash_after_the_move_is_recoverable(vault):
     assert not page.exists()  # the file is in .archive, the DB never heard
     prune.restore(conn, "P1")
     assert page.exists() and _archived(conn) is None
+
+
+def test_restore_never_overwrites_a_newer_page(vault):
+    conn, page, cand = vault
+    prune.prune(conn, [cand], dry_run=False)
+    page.write_text("NEWER PAGE CONTENT")
+    with pytest.raises(SystemExit):
+        prune.restore(conn, "P1")
+    assert page.read_text() == "NEWER PAGE CONTENT"

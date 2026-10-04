@@ -622,6 +622,7 @@ def ingest_source(source_path: str, source_kind: str = "file",
         ]),
         trust=trust,
     )
+    _place_source_page(conn, src_page, kept.relative_to(REPO).as_posix())
 
     concepts = [PageWrite(
         id=str(ulid.new()),
@@ -654,6 +655,19 @@ def ingest_source(source_path: str, source_kind: str = "file",
     # final commit (Ollama dying, the LLM quota running out on a contradiction
     # check) leaves no orphan, unindexed page in wiki/ and no half-rewritten one.
     journal: dict[pathlib.Path, str | None] = {}
+
+    # Every LLM judgement runs BEFORE the write transaction opens: each call
+    # can take minutes, and an open write transaction would lock out the
+    # scorer and other filers ("database is locked" after 5 s).
+    verdicts: dict[int, tuple[dict | None, bool]] = {}
+    for pw in concepts + entities:
+        ex = _existing_page_at(conn, pw.path)
+        if ex:
+            v = _detect_contradiction(ex[1], pw.body_md)
+            explicit = False
+            if v and v.get("verdict") == "contradiction" and source_kind == "session":
+                explicit, _quote = _user_stated_explicitly(raw, v.get("claim_new", ""))
+            verdicts[id(pw)] = (v, explicit)
 
     def write(pw: PageWrite, **kw) -> None:
         if pw.path not in journal:
@@ -695,7 +709,8 @@ def ingest_source(source_path: str, source_kind: str = "file",
                 # fresh ULID and inserting a second row at the same path (path has
                 # no unique constraint, which would duplicate the FTS/vec index).
                 pw.id = old_id
-                v = _detect_contradiction(old_body, pw.body_md)
+                v, precomputed_explicit = verdicts.get(id(pw)) or (
+                    _detect_contradiction(old_body, pw.body_md), None)
                 if v and v.get("verdict") == "contradiction":
                     # ADR-11: on source_kind='session', if the user explicitly
                     # stated the new claim in the transcript, auto-resolve as
@@ -710,8 +725,8 @@ def ingest_source(source_path: str, source_kind: str = "file",
                     pinned_wins = bool(conn.execute(
                         "SELECT pinned FROM pages WHERE id=?", (old_id,)
                     ).fetchone()[0])
-                    session_explicit = False
-                    if source_kind == "session":
+                    session_explicit = bool(precomputed_explicit)
+                    if source_kind == "session" and precomputed_explicit is None:
                         session_explicit, _quote = _user_stated_explicitly(
                             raw, v.get("claim_new", ""))
                     if session_explicit or pinned_wins:
@@ -795,6 +810,33 @@ def _undo_page_writes(conn, journal: dict[pathlib.Path, str | None]) -> None:
                 path.unlink(missing_ok=True)
         except Exception:
             pass  # best effort: the original exception is what matters
+
+
+def _place_source_page(conn, pw: PageWrite, raw_rel: str) -> None:
+    """Give a source page its address. Re-ingesting the same raw source reuses
+    the existing page (same ULID, same file). A different source the LLM gave
+    the same title gets a dated title and its own file instead of overwriting
+    the first one (two sessions titled alike used to clobber each other)."""
+    base_title = pw.title
+    n = 0
+    while True:
+        rel = pw.path.relative_to(REPO).as_posix()
+        row = conn.execute("SELECT id, path FROM pages WHERE path = ? COLLATE NOCASE "
+                           "AND archived_at IS NULL", (rel,)).fetchone()
+        if not row and not pw.path.exists():
+            return
+        existing = REPO / (row[1] if row else rel)
+        try:
+            same = re.search(r'^raw_path: "?' + re.escape(raw_rel) + r'"?$',
+                             existing.read_text(encoding="utf-8"), re.M) is not None
+        except OSError:
+            same = False
+        if same and row:
+            pw.id, pw.path = row[0], existing
+            return
+        n += 1
+        pw.title = f"{base_title} ({time.strftime('%Y-%m-%d')})" + (f" {n}" if n > 1 else "")
+        pw.path = WIKI / "sources" / f"{_slugify(pw.title)}.md"
 
 
 def _page_id_should_index(conn, pw: PageWrite, frozen: set[str]) -> bool:

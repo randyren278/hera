@@ -159,6 +159,9 @@ def restore(conn: sqlite3.Connection, page_id: str) -> str:
     title, orig_path, type_, archived_at = row
     src = ARCHIVE / f"{page_id}.{pathlib.Path(orig_path).name}"
     dst = REPO / orig_path
+    if src.exists() and dst.exists():
+        raise SystemExit(f"refusing to restore over {dst}: a page exists there now "
+                         f"(archived copy kept at {src})")
     if src.exists():
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dst))

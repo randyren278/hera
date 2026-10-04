@@ -152,3 +152,43 @@ def test_case_variant_title_reuses_the_existing_page(vault):
     ingest.ingest_source(str(_write_source_file(root, "again.txt")), conn=conn)
     rows = conn.execute("SELECT path FROM pages WHERE type='concept'").fetchall()
     assert rows == [("wiki/concepts/Auto-Waiting.md",)]
+
+
+def test_source_page_reingest_reuses_it_and_a_title_clash_does_not_overwrite(vault):
+    """Council round 2: two ingests of one source minted two source rows; two
+    different sessions the LLM titled alike overwrote the first file."""
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    src = _write_source_file(root)
+    ingest.ingest_source(str(src), conn=conn)
+    ingest.ingest_source(str(src), conn=conn)  # same source again
+    rows = conn.execute("SELECT path FROM pages WHERE type='source'").fetchall()
+    assert rows == [("wiki/sources/Playwright Brief.md",)]
+    first = (root / "wiki/sources/Playwright Brief.md").read_text()
+
+    ingest.ingest_source(str(_write_source_file(root, "other.txt")), conn=conn)  # same title
+    paths = sorted(r[0] for r in conn.execute("SELECT path FROM pages WHERE type='source'"))
+    assert len(paths) == 2 and len(set(paths)) == 2, paths
+    assert (root / "wiki/sources/Playwright Brief.md").read_text() == first
+
+
+def test_llm_judgements_run_before_any_write(vault):
+    """Council round 2 (R2-5): contradiction checks are minutes-long LLM calls;
+    they must not run while ingest holds a write transaction."""
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    ingest.ingest_source(str(_write_source_file(root)), conn=conn)
+    payload = {"source": {"title": "Later Brief", "one_line": "x", "key_takeaways": [], "body": "b"},
+               "concepts": [{"title": "Auto-Waiting", "one_line": "y", "body": "new", "aliases": []}],
+               "entities": [], "warnings": []}
+    mp.setattr(ingest, "_call_claude_extract", lambda raw: payload)
+    seen = {}
+
+    def judge(old, new):
+        seen["source_written"] = (root / "wiki/sources/Later Brief.md").exists()
+        seen["in_txn"] = conn.in_transaction
+        return None
+
+    mp.setattr(ingest, "_detect_contradiction", judge)
+    ingest.ingest_source(str(_write_source_file(root, "later.txt")), conn=conn)
+    assert seen == {"source_written": False, "in_txn": False}

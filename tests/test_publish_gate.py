@@ -99,3 +99,13 @@ def test_git_never_prompts_for_credentials():
     r = team_sync._run(["git", "-c", "credential.helper=", "ls-remote",
                         "https://example.invalid/none.git"])
     assert r.returncode != 0  # fails fast instead of waiting on a prompt
+
+
+def test_scan_cannot_be_bypassed_with_a_plus_plus_line():
+    """Council round 2: an added line starting '++' looked like a '+++' header."""
+    sys.path.insert(0, str(REPO / "scripts"))
+    import publish
+    diff = ("diff --git a/x.md b/x.md\n--- /dev/null\n+++ b/x.md\n@@ -0,0 +1,2 @@\n"
+            "+++ AKIAABCDEFGHIJKLMNOP\n++ password: hunter2hunter2\n")
+    blocking, _ = publish.scan_diff(diff)
+    assert any("AWS" in b for b in blocking) and any("credential" in b for b in blocking)
