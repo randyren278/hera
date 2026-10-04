@@ -153,7 +153,10 @@ def main() -> int:
                 conflicts_by_page.setdefault(pid, []).append((co, cn))
 
         # Format as factual statements (not imperatives) to sidestep injection defenses (R-8).
-        lines = ["Relevant vault pages (pointers only — read the file if needed):"]
+        # The scorer credits only pages cited in the final answer; stating that
+        # here (as fact) is what makes citations happen at all.
+        lines = ["Relevant vault pages (pointers only — read the file if needed). "
+                 "A page is credited when the final answer cites it as (Source: [[Title]]):"]
         for m in merged:
             one_line = _first_line_from(REPO / m["path"])
             # Emit the ABSOLUTE path (REPO is the vault root). Hooks run from any

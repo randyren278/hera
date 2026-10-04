@@ -205,8 +205,10 @@ from any (foreign) working directory. The locator file is written by
   - Otherwise: `hera_db.connect()`, reads `inject_top_n` and
     `inject_relevance_floor` from the `config` table, then calls
     `search.hybrid_search(conn, prompt, top_n=..., floor=...)`. No hits → silent.
-  - **Injects** a block headed "Relevant vault pages (pointers only, read the
-    file if needed):", one bullet per hit in the form
+  - **Injects** a block headed "Relevant vault pages (pointers only — read the
+    file if needed). A page is credited when the final answer cites it as
+    (Source: [[Title]]):" — the second sentence is what gets the model to cite
+    at all (before it, 3 of 421 real sessions cited a page) — one bullet per hit in the form
     `- [[Title]]  (abspath)` followed by the first content line, where `abspath`
     is the **absolute** path under `$HERA_VAULT` (`REPO / h.path`), not
     the bare vault-relative `h.path`. Hooks run from any cwd under the global
@@ -282,6 +284,11 @@ For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`), see
 > decoratively.
 
 ---
+
+- **Catch-up at SessionEnd:** async Stop hooks are not run for every turn in
+  practice (about a third of real sessions were never scored). The SessionEnd
+  worker therefore calls `stop_score._score` on the full transcript before
+  filing; scoring is cursor-based, so nothing is counted twice.
 
 ## 7. `session_end_file.py`: SessionEnd (session filing)
 

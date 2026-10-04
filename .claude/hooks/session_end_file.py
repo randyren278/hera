@@ -190,6 +190,23 @@ def run_filing(transcript_path: str, session_id: str) -> int:
     return _file_scratch(conn, scratch, session_id)
 
 
+def _catch_up_score(transcript_path: str, session_id: str) -> None:
+    """Score citations the async Stop hook may have missed. Stop does not run
+    for every turn in practice; scoring is cursor-based, so this never double
+    counts what Stop already recorded."""
+    try:
+        sys.path.insert(0, str(REPO / "scripts"))
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        import hera_db  # type: ignore
+        import stop_score  # type: ignore
+        summary = stop_score._score(hera_db.ensure_ready(), session_id,
+                                    pathlib.Path(transcript_path))
+        _log(f"catch-up scored session={session_id} cursor={summary['cursor']} "
+             f"tier2={summary['inserted']['final']}")
+    except Exception:
+        _log("catch-up scoring error:\n" + traceback.format_exc())
+
+
 def _pending(conn) -> list[tuple[str, pathlib.Path]]:
     """Distilled sessions with no filed_sessions row, oldest first."""
     out = []
@@ -258,6 +275,7 @@ def main() -> int:
     try:
         # CLI mode: `session_end_file.py <transcript> <session_id>`
         if len(sys.argv) >= 3:
+            _catch_up_score(sys.argv[1], sys.argv[2])
             rc = run_filing(sys.argv[1], sys.argv[2])
             retry_pending()
             return rc

@@ -117,3 +117,20 @@ def test_pending_lists_only_failed_sessions(filing):
     sef, tmp, calls, state, db = filing
     sef.run_filing(str(_transcript(tmp, "d")), "sess-d")
     assert [sid for sid, _ in sef._pending(_init(db))] == ["sess-d"]
+
+
+def test_session_end_catches_up_citations_a_missed_stop_hook_dropped(filing):
+    """Stop is async and is sometimes never run; SessionEnd re-scores from the
+    cursor so final-answer citations still reach the ranking."""
+    sef, tmp, calls, state, db = filing
+    conn = _init(db)
+    conn.execute("INSERT INTO pages(id,title,aliases,type,path,created_at,updated_at) "
+                 "VALUES ('P1','Answer Bank','[]','concept','wiki/concepts/a.md','t','t')")
+    conn.commit()
+    tp = tmp / "t.jsonl"
+    tp.write_text(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
+        {"type": "text", "text": "Done. (Source: [[Answer Bank]])"}]}}) + "\n")
+    sef._catch_up_score(str(tp), "sess-x")
+    sef._catch_up_score(str(tp), "sess-x")  # cursor-based: never double counts
+    rows = _init(db).execute("SELECT page_id, tier FROM citations").fetchall()
+    assert rows == [("P1", "final")]

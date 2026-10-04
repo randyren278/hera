@@ -113,3 +113,13 @@ def test_hera_off_still_suppresses_everything():
 
 if __name__ == "__main__":
     sys.exit(run_tests(dict(globals())))
+
+
+def test_pointer_block_says_how_citations_are_credited():
+    """Without this line the model almost never cites (3 citing answers in
+    421 real sessions), so the Stop-hook ranking loop never learns."""
+    with tempfile.TemporaryDirectory() as d:
+        root = pathlib.Path(d)
+        Vault(root).add_page(TITLE, BODY, trust="self")
+        out = _run_hook(root)
+        assert "(Source: [[Title]])" in out.splitlines()[0], out
