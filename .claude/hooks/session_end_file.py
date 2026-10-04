@@ -65,6 +65,8 @@ def _mark_filed(conn, session_id: str) -> None:
 HEADER = "# Session transcript "
 CLAIM_STALE_S = 2 * 3600   # a worker that died mid-ingest frees its claim
 RETRY_LIMIT = 3            # pending sessions retried per worker run
+MAX_ATTEMPTS = 5           # then the session is left for a human (doctor lists it)
+MIN_CONTENT_CHARS = 200    # less conversation than this is not worth an LLM call
 
 
 def _scratch_for(session_id: str) -> pathlib.Path:
@@ -92,6 +94,17 @@ def _claim(session_id: str) -> bool:
         return True
     except FileExistsError:
         return False
+
+
+def _attempts_path(session_id: str) -> pathlib.Path:
+    return _claim_path(session_id).with_suffix(".attempts")
+
+
+def _attempts(session_id: str) -> int:
+    try:
+        return int(_attempts_path(session_id).read_text() or 0)
+    except (OSError, ValueError):
+        return 0
 
 
 def _release(session_id: str) -> None:
@@ -149,6 +162,14 @@ def _distill(tp: pathlib.Path, session_id: str) -> pathlib.Path:
     return scratch
 
 
+def _worth_filing(scratch: pathlib.Path) -> bool:
+    """False for sessions with (almost) no conversation — `/model` then exit
+    used to cost an LLM call and file an 'Empty Session Transcript' page."""
+    body = scratch.read_text(encoding="utf-8", errors="replace").split("\n\n")[2:]
+    has_answer = any(p.startswith("[assistant] ") and p[12:].strip() for p in body)
+    return has_answer and sum(len(p) for p in body) >= MIN_CONTENT_CHARS
+
+
 def _file_scratch(conn, scratch: pathlib.Path, session_id: str) -> int:
     """Ingest a distilled session under its claim. 0 = filed (or already
     filed / claimed elsewhere), 1 = failed and left pending for a retry."""
@@ -159,16 +180,27 @@ def _file_scratch(conn, scratch: pathlib.Path, session_id: str) -> int:
     try:
         if _already_filed(conn, session_id):
             return 0
+        if not _worth_filing(scratch):
+            _mark_filed(conn, session_id)
+            scratch.unlink(missing_ok=True)
+            _log(f"session {session_id} has nothing to file — skipped")
+            return 0
         _ensure_embed_ready()
         r = ingest.ingest_source(str(scratch), source_kind="session")
         _mark_filed(conn, session_id)
         # ingest preserved the raw copy under wiki/.raw/; this one is redundant.
         scratch.unlink(missing_ok=True)
     except Exception:
+        n = _attempts(session_id) + 1
+        try:
+            _attempts_path(session_id).write_text(str(n))
+        except OSError:
+            pass
         tb = traceback.format_exc()
         # Nested-CLI stderr can echo the whole extraction prompt (transcript
         # text); keep the log useful without copying the session into it.
-        _log(f"ingest error (session {session_id} left pending for retry):\n"
+        _log(f"ingest error (session {session_id}, attempt {n}/{MAX_ATTEMPTS}; "
+             f"{'left pending for retry' if n < MAX_ATTEMPTS else 'giving up'}):\n"
              + (tb if len(tb) <= 3000 else tb[:1500] + "\n…[truncated]…\n" + tb[-1500:]))
         return 1
     finally:
@@ -252,7 +284,7 @@ def retry_pending(limit: int = RETRY_LIMIT) -> int:
         for sid, scratch in _pending(conn, prune=True):
             if filed >= limit:
                 break
-            if _claim_path(sid).exists():
+            if _claim_path(sid).exists() or _attempts(sid) >= MAX_ATTEMPTS:
                 continue
             if sid.startswith("codex:"):
                 os.environ["HERA_LLM_BACKEND"] = "codex"

@@ -52,8 +52,11 @@ def _init(db):
 
 
 def _transcript(tmp_path: pathlib.Path, name: str) -> pathlib.Path:
+    """A session with enough conversation to be worth filing."""
     p = tmp_path / f"{name}.jsonl"
-    p.write_text(json.dumps({"message": {"role": "user", "content": "hello"}}) + "\n")
+    p.write_text("".join(json.dumps({"message": {"role": r, "content": t * 40}}) + "\n"
+                         for r, t in (("user", "please explain the build. "),
+                                      ("assistant", "the build compiles then links. "))))
     return p
 
 
@@ -157,3 +160,22 @@ def test_logs_rotate(filing, monkeypatch):
         sef._log("x" * 20)
     log = tmp / ".hera" / "filing.log"
     assert log.stat().st_size <= 200 and log.with_suffix(".log.1").exists()
+
+
+def test_near_empty_session_is_marked_filed_without_an_llm_call(filing):
+    """Sessions like `/model` then exit produced 'Empty Session Transcript' pages."""
+    sef, tmp, calls, state, db = filing
+    state["fail"] = False
+    tiny = tmp / "tiny.jsonl"
+    tiny.write_text(json.dumps({"message": {"role": "user", "content": "/model"}}) + "\n")
+    assert sef.run_filing(str(tiny), "sess-tiny") == 0
+    assert calls == [] and _filed(db) == {"sess-tiny"}
+
+
+def test_retries_stop_after_max_attempts(filing):
+    sef, tmp, calls, state, db = filing
+    sef.run_filing(str(_transcript(tmp, "bad")), "sess-bad")  # attempt 1
+    for _ in range(sef.MAX_ATTEMPTS + 3):
+        sef.retry_pending()
+    assert len(calls) == sef.MAX_ATTEMPTS
+    assert _filed(db) == set()

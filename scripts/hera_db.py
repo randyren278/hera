@@ -458,12 +458,17 @@ def doctor(verbose: bool = False) -> int:
     # 7b. Sessions whose filing failed and await retry_pending().
     try:
         sys.path.insert(0, str(REPO / ".claude" / "hooks"))
-        import session_end_file
-        n = len(session_end_file._pending(conn))
-        if n:
-            _warn(f"unfiled sessions ({n}) — retried automatically at the next "
-                  "session end; see .hera/filing.log")
-        else:
+        import session_end_file as sef
+        pending = sef._pending(conn)
+        stuck = [sid for sid, _ in pending if sef._attempts(sid) >= sef.MAX_ATTEMPTS]
+        if stuck:
+            _warn(f"sessions that failed to file {sef.MAX_ATTEMPTS}× ({len(stuck)}), no longer "
+                  f"retried: {', '.join(stuck[:3])} — see .hera/filing.log; delete "
+                  f".hera/claims/*.attempts to retry")
+        if len(pending) > len(stuck):
+            _warn(f"unfiled sessions ({len(pending) - len(stuck)}) — retried automatically "
+                  "at the next session end; see .hera/filing.log")
+        elif not pending:
             _ok("unfiled sessions (0)")
     except Exception as e:
         _warn(f"unfiled-session scan failed: {e}")

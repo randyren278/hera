@@ -329,7 +329,10 @@ For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`, cosine 
   stops two workers from ingesting the same session. Before ingesting, the
   worker tries to start the Ollama daemon if it isn't answering, and
   `ingest_source` checks the embedder before the LLM call or any page write,
-  so an outage leaves no orphan pages.
+  so an outage leaves no orphan pages. After `MAX_ATTEMPTS` (5) failures a
+  session is no longer retried and `--doctor` lists it. A session with less
+  than 200 characters of conversation, or no assistant text, is marked filed
+  without an LLM call (no more "Empty Session Transcript" pages).
 - **Fail-open:** `main()` wraps in `try/except`; errors log
   `"hook error:\n"+traceback` and **return 0**. Inside `run_filing`, missing
   transcript, flatten exception, or ingest exception each log and return 1, but
