@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import shutil
 
 import registration
 import settings
@@ -13,6 +14,27 @@ END = "<!-- Hera managed: end -->"
 
 def home() -> pathlib.Path:
     return pathlib.Path(os.environ.get("CODEX_HOME", pathlib.Path.home() / ".codex"))
+
+
+def present() -> bool:
+    """Register with Codex only when the user has it: CODEX_HOME set, an
+    existing ~/.codex, or `codex` on PATH. Otherwise leave no trace."""
+    return bool(os.environ.get("CODEX_HOME")) or home().exists() or shutil.which("codex") is not None
+
+
+def _replace_stale_link(link: pathlib.Path, want: pathlib.Path) -> bool:
+    """True if ``link`` is a symlink Hera may repoint at ``want``: already
+    right, dangling, or pointing at another copy of the same Hera file (a
+    moved vault or an earlier clone). False for anything else."""
+    if not link.is_symlink():
+        return False
+    target = pathlib.Path(os.readlink(link))
+    if link.resolve() == want.resolve():
+        return True
+    if not link.exists() or target.name == want.name:
+        link.unlink()
+        return True
+    return False
 
 
 def fragment(vault: pathlib.Path) -> dict:
@@ -54,13 +76,13 @@ def install(vault: pathlib.Path, names: list[str], claude_locator: pathlib.Path)
     registration.register_skills(vault, target / "skills", names, target)
     link = target / "hera.env"
     if link.is_symlink():
-        if link.resolve() != claude_locator.resolve():
+        if not _replace_stale_link(link, claude_locator):
             raise RuntimeError(f"refusing to replace foreign symlink: {link}")
     elif link.exists():
         if os.name != "nt" or not link.read_text(encoding="utf-8").startswith("# Hera vault locator"):
             raise RuntimeError(f"refusing to replace existing file: {link}")
         link.write_text(claude_locator.read_text(encoding="utf-8"), encoding="utf-8")
-    else:
+    if not link.exists() and not link.is_symlink():
         if os.name == "nt":
             link.write_text(claude_locator.read_text(encoding="utf-8"), encoding="utf-8")
         else:
@@ -71,12 +93,12 @@ def install(vault: pathlib.Path, names: list[str], claude_locator: pathlib.Path)
     guidance = target / "hera" / "AGENTS.md"
     guidance.parent.mkdir(parents=True, exist_ok=True)
     if guidance.is_symlink():
-        if guidance.resolve() != (vault / "AGENTS.md").resolve():
+        if not _replace_stale_link(guidance, vault / "AGENTS.md"):
             raise RuntimeError(f"refusing to replace foreign symlink: {guidance}")
     elif guidance.exists():
         if os.name != "nt" or guidance.read_text(encoding="utf-8") != (vault / "AGENTS.md").read_text(encoding="utf-8"):
             raise RuntimeError(f"refusing to replace existing file: {guidance}")
-    else:
+    if not guidance.exists() and not guidance.is_symlink():
         if os.name == "nt":
             guidance.write_text((vault / "AGENTS.md").read_text(encoding="utf-8"), encoding="utf-8")
         else:

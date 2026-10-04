@@ -131,3 +131,15 @@ def test_install_supersedes_other_vault(vault_env, tmp_path):
     assert "other vault" in r.stdout  # the user is told what was replaced
     vaults = settings_mod.hera_vaults_in_settings(home / "settings.json")
     assert vaults == [vault_env["vault"].as_posix()]
+
+
+def test_uninstall_leaves_a_shipped_disabled_project_settings_alone(vault_env):
+    """A fresh clone ships .claude/settings.json.disabled (tracked). Install has
+    nothing to disable, so uninstall must not rename it into an active,
+    relative-path project settings.json (dirtying the checkout)."""
+    run, proj = vault_env["run"], vault_env["proj"]
+    proj.rename(proj.with_suffix(".json.disabled"))
+    assert run().returncode == 0
+    assert run("--uninstall").returncode == 0
+    assert not proj.exists()
+    assert proj.with_suffix(".json.disabled").exists()

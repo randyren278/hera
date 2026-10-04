@@ -144,9 +144,11 @@ def main() -> int:
             if os.environ.get("HERA_FILING_SYNC") == "1":
                 _file(event["transcript_path"], event["session_id"])
             else:
+                detach = ({"creationflags": 0x00000008 | 0x00000200}  # DETACHED_PROCESS | NEW_GROUP
+                          if os.name == "nt" else {"start_new_session": True})
                 subprocess.Popen([sys.executable, __file__, "file", event["transcript_path"], event["session_id"]],
                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL, start_new_session=(os.name != "nt"))
+                                 stderr=subprocess.DEVNULL, **detach)
     except Exception as exc:
         log = VAULT / ".hera" / "codex-hook.log"
         log.parent.mkdir(parents=True, exist_ok=True)

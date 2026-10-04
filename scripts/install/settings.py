@@ -38,6 +38,24 @@ def build_fragment(vault: pathlib.Path, os_name: str | None = None) -> dict:
     return {"hooks": hooks}
 
 
+class SettingsError(ValueError):
+    """A settings file Hera must edit is unreadable; nothing was changed."""
+
+
+def load_json(path: pathlib.Path) -> dict:
+    """Parse a JSON settings file, or raise SettingsError naming the file."""
+    path = pathlib.Path(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as e:
+        raise SettingsError(f"{path} is not valid JSON ({e}). Fix it and re-run; "
+                            "nothing was changed.") from None
+    if not isinstance(data, dict):
+        raise SettingsError(f"{path} must hold a JSON object. Fix it and re-run; "
+                            "nothing was changed.")
+    return data
+
+
 # --- signatures / merge / strip -------------------------------------------
 
 def _sig(entry: dict) -> tuple:
@@ -68,10 +86,7 @@ def merge_settings(target: pathlib.Path, fragment: dict) -> None:
     Idempotent: dedupes hook-groups by command-tuple signature."""
     target = pathlib.Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        data = json.loads(target.read_text(encoding="utf-8"))
-    else:
-        data = {}
+    data = load_json(target) if target.exists() else {}
     data.setdefault("hooks", {})
     for event, groups in fragment.get("hooks", {}).items():
         existing = data["hooks"].setdefault(event, [])
@@ -132,7 +147,7 @@ def remove_other_vault_hooks(target: pathlib.Path, vault: pathlib.Path) -> list[
     target = pathlib.Path(target)
     if not target.exists():
         return []
-    data = json.loads(target.read_text(encoding="utf-8"))
+    data = load_json(target)
     removed: set[str] = set()
     hooks = data.get("hooks", {})
     for ev, groups in list(hooks.items()):
@@ -163,7 +178,7 @@ def strip_our_hooks(target: pathlib.Path, fragment: dict) -> str:
     target = pathlib.Path(target)
     if not target.exists():
         return "no settings.json"
-    data = json.loads(target.read_text(encoding="utf-8"))
+    data = load_json(target)
     frag_sigs = {ev: {_sig(g) for g in groups}
                  for ev, groups in fragment.get("hooks", {}).items()}
     hooks = data.get("hooks", {})
@@ -182,6 +197,8 @@ def strip_our_hooks(target: pathlib.Path, fragment: dict) -> str:
     if not hooks and not other_keys:
         target.unlink()
         return "removed settings.json (contained only Hera hooks)"
+    if not hooks:
+        del data["hooks"]  # leave the file as it was before install
     _atomic_json(target, data)
     return "stripped Hera hook entries from settings.json"
 
@@ -205,6 +222,9 @@ def backup_file(src: pathlib.Path) -> pathlib.Path | None:
 
 
 def _atomic_json(path: pathlib.Path, data: dict) -> None:
+    # Write through a symlink (dotfiles managers keep settings.json as one);
+    # os.replace on the link itself would swap it for a plain file.
+    path = pathlib.Path(os.path.realpath(path))
     tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
     tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, path)

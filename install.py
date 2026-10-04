@@ -155,6 +155,14 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
         "home ": str(home),
     })
 
+    # Refuse up front if a settings file we must edit is unreadable, so a bad
+    # JSON file never leaves a half-done install behind.
+    import settings as settings_mod  # scripts/install/settings.py
+    import codex
+    for f in (global_settings, codex.home() / "hooks.json"):
+        if f.exists():
+            settings_mod.load_json(f)
+
     # Step 1: preflight (bootstraps .venv, checks Ollama).
     ui.step("step 1/7: preflight")
     if dry:
@@ -284,17 +292,21 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
     else:
         import registration
         registration.register_skills(VAULT, global_skills, SKILL_DIRS, home)
-    if dry:
+    if not codex.present():
+        ui.info("(Codex not found — skipping Codex registration)")
+    elif dry:
         ui.info("[dry] register Codex skills, hooks, locator, and guidance")
     else:
-        import codex
         codex.install(VAULT, SKILL_DIRS, loc_env)
 
     # Step 6: disable project-local settings.json so hooks don't double-fire.
     ui.step("step 6/7: disable project-local settings.json")
     if project_settings.exists():
-        r.do(f"move {project_settings} → {project_disabled}",
-             lambda: os.replace(project_settings, project_disabled))
+        def _disable():
+            os.replace(project_settings, project_disabled)
+            import registration
+            registration.set_flag(home, "disabled_project_settings", True)
+        r.do(f"move {project_settings} → {project_disabled}", _disable)
     else:
         ui.info("(no project-local settings.json to disable)")
 
@@ -341,20 +353,27 @@ def do_uninstall(dry: bool) -> int:
     global_md = home / "CLAUDE.md"
     r = Runner(dry)
 
-    if dry:
-        ui.info("[dry] unregister Codex skills, hooks, locator, and guidance")
-    else:
-        import codex
-        codex.uninstall(VAULT)
-
     ui.header("Hera - uninstaller", {
         "vault": str(VAULT),
         "home ": str(home),
         "mode ": f"uninstall   dry={int(dry)}",
     })
 
-    # Step 1: remove copied skills we created (tracked via manifest).
-    ui.step("step 1/5: remove copied skills")
+    import codex
+    if not codex.home().exists():
+        pass
+    elif dry:
+        ui.info("[dry] unregister Codex skills, hooks, locator, and guidance")
+    else:
+        codex.uninstall(VAULT)
+
+    # Whether install disabled a project settings.json (read before step 1,
+    # which may drop the manifest). A clone ships it disabled; leave that be.
+    import registration
+    we_disabled = bool(registration.get_flag(home, "disabled_project_settings"))
+
+    # Step 1: remove skill links/copies we created (tracked via manifest).
+    ui.step("step 1/5: remove Hera skills")
     if dry:
         ui.info(f"[dry] remove Hera skills from {global_skills} (per manifest)")
     else:
@@ -383,11 +402,13 @@ def do_uninstall(dry: bool) -> int:
 
     # Step 4: re-enable project-local settings.json.
     ui.step("step 4/5: re-enable project-local settings.json")
-    if project_disabled.exists():
-        r.do(f"move {project_disabled} → {project_settings}",
-             lambda: os.replace(project_disabled, project_settings))
+    if project_disabled.exists() and we_disabled:
+        def _enable():
+            os.replace(project_disabled, project_settings)
+            registration.set_flag(home, "disabled_project_settings", None)
+        r.do(f"move {project_disabled} → {project_settings}", _enable)
     else:
-        ui.info("(no disabled project settings to re-enable)")
+        ui.info("(install did not disable project settings — leaving them as they are)")
 
     # Step 5: strip our CLAUDE.md block.
     ui.step("step 5/5: strip global CLAUDE.md block")
@@ -470,6 +491,7 @@ def _backup(path: pathlib.Path) -> pathlib.Path | None:
 
 
 def _atomic_write(path: pathlib.Path, text: str) -> None:
+    path = pathlib.Path(os.path.realpath(path))  # keep a dotfiles symlink intact
     tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
     tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)
@@ -494,6 +516,16 @@ def main(argv: list[str] | None = None) -> int:
     if a.help:
         print(__doc__)
         return 0
+    try:
+        return _dispatch(a, argv)
+    except (RuntimeError, ValueError, OSError) as e:
+        # Expected, user-fixable conditions (a foreign file in the way, bad
+        # JSON, a permissions problem): a clear line, not a traceback.
+        print(f"install: {e}", file=sys.stderr)
+        return 1
+
+
+def _dispatch(a: argparse.Namespace, argv: list[str] | None) -> int:
     if a.uninstall:
         return do_uninstall(a.dry_run)
     # A real install needs a python that can load sqlite extensions. Dry-run

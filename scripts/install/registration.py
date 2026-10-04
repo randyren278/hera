@@ -39,6 +39,24 @@ def _save_manifest(home: pathlib.Path, data: dict) -> None:
     p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def get_flag(home: pathlib.Path, key: str):
+    return _load_manifest(home).get(key)
+
+
+def set_flag(home: pathlib.Path, key: str, value) -> None:
+    """Record (or, with a falsy value, clear) an install fact in the manifest.
+    The manifest file is removed once it records nothing."""
+    manifest = _load_manifest(home)
+    if value:
+        manifest[key] = value
+    else:
+        manifest.pop(key, None)
+    if any(manifest.get(k) for k in manifest):
+        _save_manifest(home, manifest)
+    elif _manifest_path(home).exists():
+        _manifest_path(home).unlink()
+
+
 def register_skills(vault: pathlib.Path, skills_dir: pathlib.Path,
                     skill_dirs: list[str], home: pathlib.Path,
                     os_name: str | None = None) -> list[str]:

@@ -17,7 +17,11 @@ import subprocess
 import sys
 import pathlib
 
-PIP_DEPS = ["sqlite-vec", "ulid-py", "requests", "pyyaml", "pytest"]
+# Compatible ranges: a fresh install must not pick up a breaking major release
+# (sqlite-vec's vec0 format especially). Versions verified: sqlite-vec 0.1.9,
+# ulid-py 1.1.0, requests 2.34, PyYAML 6.0.3, pytest 9.1.
+PIP_DEPS = ["sqlite-vec>=0.1.6,<0.2", "ulid-py>=1.1,<2", "requests>=2.31,<3",
+            "pyyaml>=6,<7", "pytest>=8,<10"]
 
 
 def venv_python(vault: pathlib.Path, os_name: str | None = None) -> pathlib.Path:

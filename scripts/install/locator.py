@@ -84,9 +84,10 @@ def write_locator(vault: pathlib.Path, target: pathlib.Path | None = None) -> pa
     lines.extend(preserved)
     body = "\n".join(lines).rstrip("\n") + "\n"
 
-    tmp = target.with_name(target.name + f".tmp.{os.getpid()}")
+    real = pathlib.Path(os.path.realpath(target))  # keep a dotfiles symlink intact
+    tmp = real.with_name(real.name + f".tmp.{os.getpid()}")
     tmp.write_text(body, encoding="utf-8")
-    os.replace(tmp, target)
+    os.replace(tmp, real)
     return target
 
 

@@ -235,24 +235,26 @@ def _claude_home() -> pathlib.Path:
 
 
 def _events_referencing_vault(settings_path: pathlib.Path, vault: pathlib.Path) -> list[str]:
-    """Hook events in ``settings_path`` whose command references ``vault``.
-
-    Content-based (substring on the vault path), never readlink — matching the
-    installer's own hook-matching invariant. Returns [] on any error/absence.
+    """Hook events in ``settings_path`` whose Hera hook command runs from
+    exactly ``vault`` (parsed with settings.hera_hook_vault — a path prefix
+    such as /x/hera vs /x/hera-old is not a match). [] on any error/absence.
     """
     if not settings_path.exists():
         return []
     import json
+    sys.path.insert(0, str(REPO / "scripts" / "install"))
+    import settings as settings_mod
     try:
         hooks = json.loads(settings_path.read_text()).get("hooks", {})
     except Exception:
         return []
-    needle = str(vault)
+    here = settings_mod._norm_vault(vault)
     found = []
     for ev in _HOOK_EVENTS:
         for group in hooks.get(ev, []):
-            cmds = [h.get("command", "") for h in group.get("hooks", [])]
-            if any(needle in c for c in cmds):
+            owners = [settings_mod.hera_hook_vault(h.get("command", ""))
+                      for h in group.get("hooks", [])]
+            if any(o and settings_mod._norm_vault(o) == here for o in owners):
                 found.append(ev)
                 break
     return found

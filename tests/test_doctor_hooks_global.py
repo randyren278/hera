@@ -166,3 +166,10 @@ def test_codex_on_same_vault_passes(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert state["fail"] is False, out
     assert "Codex" in out
+
+
+def test_vault_path_prefix_is_not_a_match(tmp_path):
+    """/x/hera must not claim hooks registered for /x/hera-old."""
+    home = tmp_path / "home"
+    _write_global_settings(home, tmp_path / "hera-old", ["SessionStart"])
+    assert hera_db._events_referencing_vault(home / "settings.json", tmp_path / "hera") == []
