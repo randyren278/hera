@@ -359,13 +359,30 @@ def do_uninstall(dry: bool) -> int:
         "mode ": f"uninstall   dry={int(dry)}",
     })
 
+    # Validate every file we will edit before touching anything.
+    import settings as settings_mod
     import codex
+    for f in (global_settings, codex.home() / "hooks.json"):
+        if f.exists():
+            settings_mod.load_json(f)
+
+    # Uninstalling a vault that is not the active one must not take the
+    # active vault's shared pieces (locator, skills, guidance) with it.
+    import locator
+    active_vault = locator.parse_locator(loc_env).get("HERA_VAULT")
+    is_active = (not active_vault
+                 or settings_mod._norm_vault(pathlib.Path(active_vault).expanduser().resolve())
+                 == settings_mod._norm_vault(VAULT))
+    if not is_active:
+        ui.warn(f"the active vault is {active_vault}, not this one — removing only "
+                "this vault's own entries")
+
     if not codex.home().exists():
         pass
     elif dry:
         ui.info("[dry] unregister Codex skills, hooks, locator, and guidance")
     else:
-        codex.uninstall(VAULT)
+        codex.uninstall(VAULT, active=is_active)
 
     # Whether install disabled a project settings.json (read before step 1,
     # which may drop the manifest). A clone ships it disabled; leave that be.
@@ -393,8 +410,9 @@ def do_uninstall(dry: bool) -> int:
 
     # Step 3: remove locator.
     ui.step("step 3/5: remove locator")
-    if not dry:
-        import locator
+    if not is_active:
+        ui.info(f"(locator points at the active vault {active_vault} — kept)")
+    elif not dry:
         if locator.remove_locator(loc_env):
             ui.info(f"removed {loc_env}")
     else:
@@ -412,7 +430,9 @@ def do_uninstall(dry: bool) -> int:
 
     # Step 5: strip our CLAUDE.md block.
     ui.step("step 5/5: strip global CLAUDE.md block")
-    if dry:
+    if not is_active:
+        ui.info("(global CLAUDE.md block belongs to the active vault — kept)")
+    elif dry:
         ui.info(f"[dry] remove Hera block from {global_md}")
     elif global_md.exists() and HERA_MD_BEGIN.split("(")[0] in global_md.read_text(encoding="utf-8"):
         _remove_global_claudemd_block(global_md)

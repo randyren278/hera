@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
+import subprocess
+import sys
 
 
 def _read_json(p: pathlib.Path):
@@ -143,3 +146,29 @@ def test_uninstall_leaves_a_shipped_disabled_project_settings_alone(vault_env):
     assert run("--uninstall").returncode == 0
     assert not proj.exists()
     assert proj.with_suffix(".json.disabled").exists()
+
+
+def test_uninstall_from_an_inactive_vault_leaves_the_active_one_alone(vault_env, tmp_path):
+    """Council round 2 P2: `other/install.py --uninstall` removed the active
+    vault's skills and the shared locator while its hooks kept firing."""
+    run, home, vault = vault_env["run"], vault_env["home"], vault_env["vault"]
+    assert run().returncode == 0  # this vault is active
+    other = tmp_path / "other"
+    import shutil
+    shutil.copytree(vault, other, symlinks=True)
+    env = dict(os.environ, CLAUDE_HOME=str(home), CODEX_HOME=str(vault_env["codex_home"]))
+    r = subprocess.run([sys.executable, str(other / "install.py"), "--uninstall"],
+                       capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (home / "hera.env").exists()
+    assert (home / "skills" / "hera-ingest").resolve().is_relative_to(vault)
+    assert (vault_env["codex_home"] / "hera.env").exists()
+
+
+def test_uninstall_validates_json_before_removing_anything(vault_env):
+    run, home = vault_env["run"], vault_env["home"]
+    assert run().returncode == 0
+    (home / "settings.json").write_text('{"hooks": {},}')
+    r = run("--uninstall")
+    assert r.returncode != 0 and "Traceback" not in r.stderr
+    assert (home / "skills" / "hera-ingest").exists(), "removed skills before failing"

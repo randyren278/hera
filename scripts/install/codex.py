@@ -31,10 +31,21 @@ def _replace_stale_link(link: pathlib.Path, want: pathlib.Path) -> bool:
     target = pathlib.Path(os.readlink(link))
     if link.resolve() == want.resolve():
         return True
-    if not link.exists() or target.name == want.name:
+    if not link.exists() or (target.name == want.name and _is_hera_file(link.resolve())):
         link.unlink()
         return True
     return False
+
+
+def _is_hera_file(path: pathlib.Path) -> bool:
+    """Positive proof the link target is Hera's own file (a locator Hera
+    wrote, or a vault's AGENTS.md) — the same basename alone is not."""
+    try:
+        if path.name == "hera.env":
+            return path.read_text(encoding="utf-8").startswith("# Hera vault locator")
+        return (path.parent / "scripts" / "hera_db.py").exists()
+    except OSError:
+        return False
 
 
 def fragment(vault: pathlib.Path) -> dict:
@@ -106,10 +117,18 @@ def install(vault: pathlib.Path, names: list[str], claude_locator: pathlib.Path)
     _update_agents(target / "AGENTS.md", vault)
 
 
-def uninstall(vault: pathlib.Path) -> None:
+def uninstall(vault: pathlib.Path, active: bool = True) -> None:
+    """Remove this vault's Codex registration. When another vault is the
+    active one (``active`` False), the shared locator link and guidance block
+    belong to it and are left alone."""
     target = home()
     registration.unregister_skills(vault, target / "skills", target)
     settings.strip_our_hooks(target / "hooks.json", fragment(vault))
+    if not active:
+        guidance = target / "hera" / "AGENTS.md"
+        if guidance.is_symlink() and guidance.resolve() == (vault / "AGENTS.md").resolve():
+            guidance.unlink()
+        return
     for path, source in ((target / "hera.env", pathlib.Path(os.environ.get("CLAUDE_HOME", pathlib.Path.home() / ".claude")) / "hera.env"),
                          (target / "hera" / "AGENTS.md", vault / "AGENTS.md")):
         if path.is_symlink() and path.resolve() == source.resolve():

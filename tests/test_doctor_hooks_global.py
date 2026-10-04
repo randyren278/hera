@@ -185,3 +185,13 @@ def test_doctor_lists_orphan_pages(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("CLAUDE_HOME", str(tmp_path / "home"))
     hera_db.doctor()
     assert "orphan pages (1)" in capsys.readouterr().out
+
+
+def test_only_another_vault_registered_fails(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    home.mkdir()
+    _add_vault_hooks(home / "settings.json", tmp_path / "elsewhere")
+    monkeypatch.setenv("CLAUDE_HOME", str(home))
+    state = {"fail": False}
+    hera_db._doctor_hooks(state)
+    assert state["fail"] is True and "elsewhere" in capsys.readouterr().out

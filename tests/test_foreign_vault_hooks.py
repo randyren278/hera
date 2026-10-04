@@ -81,3 +81,20 @@ def test_hera_vaults_in_settings_lists_each_vault(tmp_path):
     settings_mod.merge_settings(target, settings_mod.build_fragment(NEW, "posix"))
     assert settings_mod.hera_vaults_in_settings(target) == sorted(
         [OLD.as_posix(), NEW.as_posix()])
+
+
+def test_users_own_hook_named_like_ours_is_never_touched(tmp_path):
+    """Council round 2 P1: a user's own ~/.claude/hooks/session_start.py run by
+    a system python is not a Hera hook — Hera hooks run under their own
+    vault's .venv interpreter."""
+    v = settings_mod.hera_hook_vault
+    own = '"/usr/bin/python3" "/Users/me/.claude/hooks/session_start.py"'
+    assert v(own) is None
+    assert v('"/Users/me/.venv/bin/python" "/Users/other/.claude/hooks/stop_score.py"') is None
+    target = tmp_path / "settings.json"
+    target.write_text(json.dumps({"hooks": {"SessionStart": [
+        {"hooks": [{"type": "command", "command": own}]}]}}))
+    assert settings_mod.remove_other_vault_hooks(target, NEW) == []
+    cmds = [h["command"] for g in json.loads(target.read_text())["hooks"]["SessionStart"]
+            for h in g["hooks"]]
+    assert cmds == [own]

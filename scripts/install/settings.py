@@ -100,7 +100,8 @@ def merge_settings(target: pathlib.Path, fragment: dict) -> None:
 
 _HERA_SCRIPTS = tuple(f"/.claude/hooks/{s}" for s in hookcmd.HOOK_SCRIPTS.values()) + (
     "/scripts/codex_hook.py",)
-_QUOTED = re.compile(r'^"[^"]+" "(?P<script>[^"]+)"(?: \w+)?$')
+_QUOTED = re.compile(r'^"(?P<py>[^"]+)" "(?P<script>[^"]+)"(?: \w+)?$')
+_VENV_PY = ("/.venv/bin/python", "/.venv/Scripts/python.exe")
 LEGACY = "<legacy ~/.claude/hooks install>"
 
 
@@ -109,16 +110,24 @@ def hera_hook_vault(command: str) -> str | None:
 
     Recognises the current POSIX/Windows command form, the Codex hook form, and
     the legacy ``. ~/.claude/hera.env && … ~/.claude/hooks/…`` form (returned
-    as ``LEGACY`` because it carries no vault path)."""
+    as ``LEGACY`` because it carries no vault path).
+
+    A script name alone is not proof — a user's own ~/.claude/hooks/
+    session_start.py is common. A Hera hook runs under ITS OWN vault's .venv
+    interpreter, so the interpreter path must be that same vault's."""
     if "/.claude/hera.env" in command and "/.claude/hooks/" in command:
         return LEGACY
     m = _QUOTED.match(command.strip())
     if not m:
         return None
     script = m.group("script").replace("\\", "/")
+    py = m.group("py").replace("\\", "/")
     for suffix in _HERA_SCRIPTS:
         if script.endswith(suffix):
-            return script[: -len(suffix)]
+            vault = script[: -len(suffix)]
+            if any(_norm_vault(py) == _norm_vault(vault + v) for v in _VENV_PY):
+                return vault
+            return None
     return None
 
 

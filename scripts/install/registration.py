@@ -97,6 +97,7 @@ def register_skills(vault: pathlib.Path, skills_dir: pathlib.Path,
         registered.append(name)
 
     manifest["skills"] = sorted(owned)
+    manifest["vault"] = str(vault.resolve())
     _save_manifest(home, manifest)
     return registered
 
@@ -105,24 +106,40 @@ def unregister_skills(vault: pathlib.Path, skills_dir: pathlib.Path,
                       home: pathlib.Path) -> int:
     """Remove the skill dirs we created (per manifest) from ``skills_dir``.
 
-    Returns the count removed. Only touches manifest-tracked dirs; leaves
-    foreign dirs untouched. Clears the manifest's skill list afterward.
+    Returns the count removed. Only touches manifest-tracked dirs that belong
+    to ``vault`` — a link into another vault (or copies registered by another
+    vault, per the manifest) is left alone and stays tracked. Foreign dirs are
+    never touched.
     """
     skills_dir = pathlib.Path(skills_dir)
+    vault = pathlib.Path(vault).resolve()
     manifest = _load_manifest(home)
     owned = list(manifest.get("skills", []))
-    removed = 0
+    copies_ours = manifest.get("vault") in (None, str(vault))
+    removed, kept = 0, []
     for name in owned:
         dst = skills_dir / name
-        if dst.is_symlink() or dst.is_file():
+        if dst.is_symlink():
+            try:
+                pathlib.Path(os.path.realpath(dst)).relative_to(vault)
+            except ValueError:
+                kept.append(name)  # another vault's registration
+                continue
+            dst.unlink()
+            removed += 1
+        elif not copies_ours:
+            kept.append(name)
+        elif dst.is_file():
             dst.unlink()
             removed += 1
         elif dst.is_dir():
             shutil.rmtree(dst)
             removed += 1
-    manifest["skills"] = []
+    manifest["skills"] = kept
     _save_manifest(home, manifest)
     # If the manifest now holds nothing meaningful, remove it.
+    if not manifest["skills"]:
+        manifest.pop("vault", None)
     if not any(manifest.get(k) for k in manifest):
         mp = _manifest_path(home)
         if mp.exists():

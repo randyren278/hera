@@ -319,7 +319,18 @@ def _doctor_hooks(state: dict | None = None) -> None:
             _warn(f"settings.json unreadable: {e}")
         return
 
-    # Neither mode active. If a .disabled project settings exists, this vault
+    # Neither mode active. Another vault's hooks registered globally means this
+    # checkout is not the active vault — every session files elsewhere.
+    sys.path.insert(0, str(REPO / "scripts" / "install"))
+    import settings as settings_mod
+    others = settings_mod.hera_vaults_in_settings(home_settings)
+    if others:
+        _fail(f"hooks in {home_settings} belong to another vault {others}, not this one "
+              f"— run `python {REPO / 'install.py'}` here to make this the active vault",
+              state)
+        return
+
+    # If a .disabled project settings exists, this vault
     # was globally installed but its hooks now point elsewhere (e.g. a template
     # clone whose active vault is a different one) — say so plainly.
     if SETTINGS.with_suffix(".json.disabled").exists():

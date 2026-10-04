@@ -77,3 +77,16 @@ def test_codex_is_not_registered_when_codex_is_absent(vault_env, tmp_path):
                        text=True, env=env, stdin=subprocess.DEVNULL, cwd=str(vault))
     assert r.returncode == 0, r.stdout + r.stderr
     assert not (fake_home / ".codex").exists()
+
+
+def test_users_dotfiles_symlink_named_hera_env_is_not_replaced(vault_env, tmp_path):
+    """Council round 2 P3: same basename is not proof the link is Hera's."""
+    run, codex_home = vault_env["run"], vault_env["codex_home"]
+    codex_home.mkdir(parents=True)
+    mine = tmp_path / "dotfiles" / "hera.env"
+    mine.parent.mkdir()
+    mine.write_text("MY_OWN=1\n")
+    (codex_home / "hera.env").symlink_to(mine)
+    r = run()
+    assert r.returncode != 0 and "Traceback" not in r.stderr
+    assert (codex_home / "hera.env").resolve() == mine.resolve()
