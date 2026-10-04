@@ -32,6 +32,7 @@ DB rows consistent, hot/index/log updated), not exact strings.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
@@ -214,12 +215,15 @@ def _existing_page_at(conn, path: pathlib.Path) -> tuple[str, str] | None:
     except ValueError:
         # Path outside REPO — cannot correspond to a vault page.
         return None
+    # NOCASE: "auto-waiting" and "Auto-Waiting" are one page (and one file on
+    # APFS/NTFS). The stored path's own case is what ingest then writes to.
     row = conn.execute(
-        "SELECT id FROM pages WHERE path = ? AND archived_at IS NULL",
+        "SELECT id, path FROM pages WHERE path = ? COLLATE NOCASE AND archived_at IS NULL",
         (rel,),
     ).fetchone()
     if not row:
         return None
+    path = REPO / row[1]
     if not path.exists():
         return None
     body = path.read_text(encoding="utf-8", errors="replace")
@@ -304,6 +308,10 @@ class PageWrite:
     path: pathlib.Path
     body_md: str
     aliases: list[str] = field(default_factory=list)
+    # Trust tier (design §5.1). 'self' is correct for everything the operator
+    # ingests by hand; a sense that pulls in email or web content passes
+    # trust='untrusted' so the page can never reach a privileged session.
+    trust: str = "self"
 
 
 @dataclass
@@ -343,7 +351,7 @@ def _frontmatter(page_id: str, title: str, type_: str, extra: dict | None = None
         if isinstance(v, str):
             # A handful of "identifier-shaped" keys are safe (and expected by
             # tooling) to emit unquoted: visibility, source_kind, etc.
-            if k in ("visibility", "source_kind", "owner") and re.match(r"^[a-z][\w-]*$", v):
+            if k in ("visibility", "source_kind", "owner", "trust") and re.match(r"^[a-z][\w-]*$", v):
                 lines.append(f"{k}: {v}")
             else:
                 lines.append(f'{k}: "{v}"')
@@ -383,7 +391,7 @@ def _call_claude_extract(raw: str) -> dict:
             f"claude binary not found ({CLAUDE_BIN!r}); set CLAUDE_BIN or put it on PATH"
         ) from e
     if r.returncode != 0:
-        raise RuntimeError(f"claude -p failed: exit {r.returncode}\nstderr:\n{r.stderr}")
+        raise RuntimeError(f"{cmd[0]} extraction failed: exit {r.returncode}\nstderr:\n{r.stderr[-4000:]}")
     out = r.stdout.strip()
     # Be forgiving: strip a stray code fence if the model added one.
     if out.startswith("```"):
@@ -403,14 +411,21 @@ def _call_claude_extract(raw: str) -> dict:
 # ---------- DB writes ----------
 
 def _upsert_page(conn, pw: PageWrite):
+    if pw.trust not in hera_db.TRUST_TIERS:
+        # The column's CHECK would reject this anyway; raising here names the
+        # offending page instead of surfacing a bare IntegrityError.
+        raise ValueError(
+            f"invalid trust tier {pw.trust!r} on page {pw.title!r}; "
+            f"expected one of {hera_db.TRUST_TIERS}")
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     conn.execute(
-        "INSERT INTO pages(id, title, aliases, type, path, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "INSERT INTO pages(id, title, aliases, type, path, created_at, updated_at, trust) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(id) DO UPDATE SET "
-        "  title=excluded.title, aliases=excluded.aliases, path=excluded.path, updated_at=excluded.updated_at",
+        "  title=excluded.title, aliases=excluded.aliases, path=excluded.path, "
+        "  updated_at=excluded.updated_at, trust=excluded.trust",
         (pw.id, pw.title, json.dumps(pw.aliases), pw.type,
-         pw.path.relative_to(REPO).as_posix(), now, now),
+         pw.path.relative_to(REPO).as_posix(), now, now, pw.trust),
     )
 
 
@@ -439,13 +454,16 @@ def _index_page_search(conn, pw: PageWrite):
     # Embedding: title + first ~500 chars of body — enough signal for retrieval
     # without embedding an entire book of text.
     payload = f"{pw.title}\n{pw.body_md[:2000]}"
-    vec = _embed.embed(payload)
+    vec = _embed.embed_document(payload)
     conn.execute("DELETE FROM pages_vec WHERE page_id = ?", (pw.id,))
     conn.execute("INSERT INTO pages_vec(page_id, embedding) VALUES (?, ?)",
                  (pw.id, _embed.pack(vec)))
 
 
 def _write_page_file(conn, pw: PageWrite, extra_fm: dict | None = None):
+    # Every page carries its tier on disk, not just in the DB — a reindex from
+    # the markdown must not silently promote an untrusted page to 'self'.
+    extra_fm = {**(extra_fm or {}), "trust": pw.trust}
     pw.path.parent.mkdir(parents=True, exist_ok=True)
     with locks.lock(pw.path, page_id=pw.id, conn=conn,
                     intent="append", delta_body="") as acq:
@@ -503,12 +521,17 @@ def _update_index(conn, result: Result) -> None:
         header = (_frontmatter(str(ulid.new()), "Index", "meta")
                   + "# Index\n\nEvery page, one line each.\n\n")
         idx.write_text(header)
-    new_lines = []
-    for p in [result.source] + result.concepts + result.entities:
-        new_lines.append(f"- [[{p.title}]] — {_one_line(p.body_md)}")
+    entries = {p.title: f"- [[{p.title}]] — {_one_line(p.body_md)}"
+               for p in [result.source] + result.concepts + result.entities}
     with locks.lock(idx, page_id=str(ulid.new()), conn=conn, allow_delta=False):
-        with idx.open("a", encoding="utf-8") as f:
-            f.write("\n".join(new_lines) + "\n")
+        # One line per title: a re-ingested page updates its line in place.
+        lines = idx.read_text(encoding="utf-8").splitlines()
+        for i, line in enumerate(lines):
+            for title in list(entries):
+                if line.startswith(f"- [[{title}]]"):
+                    lines[i] = entries.pop(title)
+        lines += entries.values()
+        idx.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _one_line(body: str) -> str:
@@ -551,22 +574,39 @@ def _update_log(conn, result: Result, raw_path: pathlib.Path | None = None) -> N
 
 def ingest_source(source_path: str, source_kind: str = "file",
                   raw_dir: pathlib.Path | None = None,
-                  conn=None) -> Result:
+                  conn=None, trust: str = "self") -> Result:
     """Ingest a single source. Returns a Result. Writes to disk + DB.
 
     source_path — path to the source file (already fetched/cleaned).
     source_kind — file | url | image | session
     raw_dir     — where to preserve the raw source; default wiki/.raw/articles/
+    trust       — self | team | untrusted (design §5.1). Defaults to 'self',
+                  which is right for an operator-initiated ingest. A caller
+                  handling content the operator did not author (email, web,
+                  tool output) MUST pass trust='untrusted'; every page the run
+                  produces then inherits that tier, and hybrid_search /
+                  prompt_inject will refuse to surface them.
     """
+    if trust not in hera_db.TRUST_TIERS:
+        raise ValueError(f"invalid trust tier {trust!r}; "
+                         f"expected one of {hera_db.TRUST_TIERS}")
     src = pathlib.Path(source_path).resolve()
     raw = _read_text_or_die(src)
+    # Every page this run writes must be indexed, and indexing needs the
+    # embedder. Check it up front so an Ollama outage fails before the LLM
+    # call and before any file lands in wiki/ (no orphan, unindexed pages).
+    _embed.embed("ready")
     if conn is None:
         conn = hera_db.ensure_ready()
 
     # Preserve raw text
     raw_dir = raw_dir or (WIKI / ".raw" / "articles")
     raw_dir.mkdir(parents=True, exist_ok=True)
-    kept = raw_dir / src.name
+    # Name the raw copy by content: two different sources sharing a basename
+    # (a/n.md, b/n.md) must not overwrite each other or look like one source.
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]
+    kept = raw_dir / (src.name if src.parent.resolve() == raw_dir.resolve()
+                      else f"{src.stem}-{digest}{src.suffix}")
     if src.resolve() != kept.resolve():
         shutil.copy2(src, kept)
 
@@ -585,7 +625,9 @@ def ingest_source(source_path: str, source_kind: str = "file",
             "## Summary",
             data["source"].get("body", "") or "",
         ]),
+        trust=trust,
     )
+    _place_source_page(conn, src_page, kept.relative_to(REPO).as_posix())
 
     concepts = [PageWrite(
         id=str(ulid.new()),
@@ -594,6 +636,7 @@ def ingest_source(source_path: str, source_kind: str = "file",
         path=WIKI / "concepts" / f"{_slugify(c['title'])}.md",
         body_md=(f"> [!info] {c.get('one_line','')}\n\n" + c.get("body", "")),
         aliases=c.get("aliases", []) or [],
+        trust=trust,
     ) for c in data.get("concepts", []) or []]
 
     entities = [PageWrite(
@@ -603,6 +646,7 @@ def ingest_source(source_path: str, source_kind: str = "file",
         path=WIKI / "entities" / f"{_slugify(e['title'])}.md",
         body_md=(f"> [!info] ({e.get('kind','')}) {e.get('one_line','')}\n\n" + e.get("body", "")),
         aliases=e.get("aliases", []) or [],
+        trust=trust,
     ) for e in data.get("entities", []) or []]
 
     # Write source page with source-specific frontmatter (§4.2)
@@ -612,107 +656,140 @@ def ingest_source(source_path: str, source_kind: str = "file",
         "ingested": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "raw_path": kept.relative_to(REPO).as_posix(),
     }
-    _write_page_file(conn, src_page, extra_fm=src_extra)
-    # The source page must exist in `pages` BEFORE the contradiction loop:
-    # _enqueue_conflict records source_new_id = src_page.id, and
-    # conflicts.source_new_id is a FK -> pages(id). Upserting it here (rather
-    # than only in the deferred batch below) keeps that FK satisfiable and
-    # avoids the crash on any contradiction. src_page is never frozen, so it is
-    # dropped from the deferred batch to stay indexed exactly once.
-    _upsert_page(conn, src_page)
-    _index_page_search(conn, src_page)
+    # Every page file this run touches is journaled, so a failure before the
+    # final commit (Ollama dying, the LLM quota running out on a contradiction
+    # check) leaves no orphan, unindexed page in wiki/ and no half-rewritten one.
+    journal: dict[pathlib.Path, str | None] = {}
 
-    # For each concept/entity: if a page already exists at the target path,
-    # run a contradiction check against its current body. On verdict=contradiction,
-    # freeze the target (do not write, do not upsert), enqueue a conflict row.
-    origin_cwd = os.environ.get("HERA_ORIGIN_CWD") or os.getcwd()
-    # Normalize so the SessionStart conflict-scope query (which normalizes the
-    # session cwd identically) matches on every OS — Windows case/separator drift
-    # would otherwise make the `origin_cwd = ?` equality silently miss.
-    origin_cwd = os.path.normcase(os.path.normpath(origin_cwd))
-    frozen: set[str] = set()  # page_ids we chose to freeze
-    result_warnings: list[str] = list(data.get("warnings", []) or [])
-
+    # Every LLM judgement runs BEFORE the write transaction opens: each call
+    # can take minutes, and an open write transaction would lock out the
+    # scorer and other filers ("database is locked" after 5 s).
+    verdicts: dict[int, tuple[dict | None, bool]] = {}
     for pw in concepts + entities:
-        existing = _existing_page_at(conn, pw.path)
-        if existing:
-            old_id, old_body = existing
-            # Reuse the existing page's ULID so a non-conflicting re-ingest
-            # UPDATES the row in place (ON CONFLICT(id)) instead of minting a
-            # fresh ULID and inserting a second row at the same path (path has
-            # no unique constraint, which would duplicate the FTS/vec index).
-            pw.id = old_id
-            v = _detect_contradiction(old_body, pw.body_md)
-            if v and v.get("verdict") == "contradiction":
-                # ADR-11: on source_kind='session', if the user explicitly
-                # stated the new claim in the transcript, auto-resolve as
-                # session-wins. Otherwise (all other source_kinds, or an
-                # only-implied contradiction from a session) enqueue for review.
-                # Pinned exception: if the EXISTING page is pinned (seed packs
-                # pin their pages, but anything may be pinned), the user's new
-                # content always wins — take the same ADR-11 resolve_new path
-                # (no open conflict, page updated in place, not left
-                # frozen/stale) rather than enqueuing.
-                auto_resolved = False
-                pinned_wins = bool(conn.execute(
-                    "SELECT pinned FROM pages WHERE id=?", (old_id,)
-                ).fetchone()[0])
-                session_explicit = False
-                if source_kind == "session":
-                    session_explicit, _quote = _user_stated_explicitly(
-                        raw, v.get("claim_new", ""))
-                if session_explicit or pinned_wins:
-                    # Enqueue then resolve_new via the conflicts primitive so
-                    # the page gets the ## Superseded archive treatment consistently.
-                    import conflicts as _conflicts  # local import to avoid cycles at load time
-                    _enqueue_conflict(
-                        conn, page_id=old_id, source_new_id=src_page.id,
-                        claim_old=v.get("claim_old", "").strip(),
-                        claim_new=v.get("claim_new", "").strip(),
-                        origin_cwd=origin_cwd,
-                    )
-                    cid = conn.execute(
-                        "SELECT id FROM conflicts WHERE page_id=? AND status='open' ORDER BY id DESC LIMIT 1",
-                        (old_id,),
-                    ).fetchone()[0]
-                    _conflicts.resolve_new(conn, cid)
-                    reason = ("pinned override" if pinned_wins
-                              else "ADR-11 explicit statement")
-                    result_warnings.append(
-                        f"auto-resolved ({reason}, user-wins) on [[{pw.title}]]"
-                    )
-                    auto_resolved = True
-                    # resolve_new updated the existing page (old_id) in
-                    # place. Freeze old_id so the fresh-ULID pw is NOT
-                    # upserted below — otherwise a second pages row is
-                    # minted for the same path (path has no unique
-                    # constraint), duplicating the FTS/vec index too.
-                    frozen.add(old_id)
+        ex = _existing_page_at(conn, pw.path)
+        if ex:
+            v = _detect_contradiction(ex[1], pw.body_md)
+            explicit = False
+            if v and v.get("verdict") == "contradiction" and source_kind == "session":
+                explicit, _quote = _user_stated_explicitly(raw, v.get("claim_new", ""))
+            verdicts[id(pw)] = (v, explicit)
 
-                if not auto_resolved:
-                    _enqueue_conflict(
-                        conn,
-                        page_id=old_id,
-                        source_new_id=src_page.id,
-                        claim_old=v.get("claim_old", "").strip(),
-                        claim_new=v.get("claim_new", "").strip(),
-                        origin_cwd=origin_cwd,
-                    )
-                    frozen.add(old_id)
-                    result_warnings.append(
-                        f"conflict enqueued on [[{pw.title}]]: {v.get('reason','no reason given')}"
-                    )
-                continue
-        _write_page_file(conn, pw)
+    def write(pw: PageWrite, **kw) -> None:
+        if pw.path not in journal:
+            journal[pw.path] = (pw.path.read_text(encoding="utf-8")
+                                if pw.path.exists() else None)
+        _write_page_file(conn, pw, **kw)
 
-    # DB writes for pages that were NOT frozen. src_page was already upserted
-    # and indexed above the loop (FK precondition), so it is excluded here.
-    all_pages_to_index = [p for p in concepts + entities
-                          if _page_id_should_index(conn, p, frozen)]
-    for p in all_pages_to_index:
-        _upsert_page(conn, p)
-        _index_page_search(conn, p)
-    conn.commit()
+    try:
+        write(src_page, extra_fm=src_extra)
+        # The source page must exist in `pages` BEFORE the contradiction loop:
+        # _enqueue_conflict records source_new_id = src_page.id, and
+        # conflicts.source_new_id is a FK -> pages(id). Upserting it here (rather
+        # than only in the deferred batch below) keeps that FK satisfiable and
+        # avoids the crash on any contradiction. src_page is never frozen, so it is
+        # dropped from the deferred batch to stay indexed exactly once.
+        _upsert_page(conn, src_page)
+        _index_page_search(conn, src_page)
+
+        # For each concept/entity: if a page already exists at the target path,
+        # run a contradiction check against its current body. On verdict=contradiction,
+        # freeze the target (do not write, do not upsert), enqueue a conflict row.
+        origin_cwd = os.environ.get("HERA_ORIGIN_CWD") or os.getcwd()
+        # Canonicalize so the SessionStart conflict-scope query matches on every
+        # OS. macOS /tmp→/private/tmp aliases and Windows case/separator drift
+        # would otherwise make the `origin_cwd = ?` equality silently miss.
+        origin_cwd = os.path.normcase(os.path.realpath(os.path.normpath(origin_cwd)))
+        frozen: set[str] = set()  # page_ids we chose to freeze
+        result_warnings: list[str] = list(data.get("warnings", []) or [])
+
+        for pw in concepts + entities:
+            existing = _existing_page_at(conn, pw.path)
+            if existing:
+                old_id, old_body = existing
+                # Keep the existing file's name (case) and title.
+                row = conn.execute("SELECT path, title FROM pages WHERE id=?", (old_id,)).fetchone()
+                pw.path, pw.title = REPO / row[0], row[1]
+                # Reuse the existing page's ULID so a non-conflicting re-ingest
+                # UPDATES the row in place (ON CONFLICT(id)) instead of minting a
+                # fresh ULID and inserting a second row at the same path (path has
+                # no unique constraint, which would duplicate the FTS/vec index).
+                pw.id = old_id
+                v, precomputed_explicit = verdicts.get(id(pw)) or (
+                    _detect_contradiction(old_body, pw.body_md), None)
+                if v and v.get("verdict") == "contradiction":
+                    # ADR-11: on source_kind='session', if the user explicitly
+                    # stated the new claim in the transcript, auto-resolve as
+                    # session-wins. Otherwise (all other source_kinds, or an
+                    # only-implied contradiction from a session) enqueue for review.
+                    # Pinned exception: if the EXISTING page is pinned (seed packs
+                    # pin their pages, but anything may be pinned), the user's new
+                    # content always wins — take the same ADR-11 resolve_new path
+                    # (no open conflict, page updated in place, not left
+                    # frozen/stale) rather than enqueuing.
+                    auto_resolved = False
+                    pinned_wins = bool(conn.execute(
+                        "SELECT pinned FROM pages WHERE id=?", (old_id,)
+                    ).fetchone()[0])
+                    session_explicit = bool(precomputed_explicit)
+                    if source_kind == "session" and precomputed_explicit is None:
+                        session_explicit, _quote = _user_stated_explicitly(
+                            raw, v.get("claim_new", ""))
+                    if session_explicit or pinned_wins:
+                        # Enqueue then resolve_new via the conflicts primitive so
+                        # the page gets the ## Superseded archive treatment consistently.
+                        import conflicts as _conflicts  # local import to avoid cycles at load time
+                        _enqueue_conflict(
+                            conn, page_id=old_id, source_new_id=src_page.id,
+                            claim_old=v.get("claim_old", "").strip(),
+                            claim_new=v.get("claim_new", "").strip(),
+                            origin_cwd=origin_cwd,
+                        )
+                        cid = conn.execute(
+                            "SELECT id FROM conflicts WHERE page_id=? AND status='open' ORDER BY id DESC LIMIT 1",
+                            (old_id,),
+                        ).fetchone()[0]
+                        _conflicts.resolve_new(conn, cid)
+                        reason = ("pinned override" if pinned_wins
+                                  else "ADR-11 explicit statement")
+                        result_warnings.append(
+                            f"auto-resolved ({reason}, user-wins) on [[{pw.title}]]"
+                        )
+                        auto_resolved = True
+                        # resolve_new updated the existing page (old_id) in
+                        # place. Freeze old_id so the fresh-ULID pw is NOT
+                        # upserted below — otherwise a second pages row is
+                        # minted for the same path (path has no unique
+                        # constraint), duplicating the FTS/vec index too.
+                        frozen.add(old_id)
+
+                    if not auto_resolved:
+                        _enqueue_conflict(
+                            conn,
+                            page_id=old_id,
+                            source_new_id=src_page.id,
+                            claim_old=v.get("claim_old", "").strip(),
+                            claim_new=v.get("claim_new", "").strip(),
+                            origin_cwd=origin_cwd,
+                        )
+                        frozen.add(old_id)
+                        result_warnings.append(
+                            f"conflict enqueued on [[{pw.title}]]: {v.get('reason','no reason given')}"
+                        )
+                    continue
+            write(pw)
+
+        # DB writes for pages that were NOT frozen. src_page was already upserted
+        # and indexed above the loop (FK precondition), so it is excluded here.
+        all_pages_to_index = [p for p in concepts + entities
+                              if _page_id_should_index(conn, p, frozen)]
+        for p in all_pages_to_index:
+            _upsert_page(conn, p)
+            _index_page_search(conn, p)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        _undo_page_writes(conn, journal)
+        raise
 
     # Meta pages
     result = Result(source=src_page, concepts=concepts, entities=entities,
@@ -722,6 +799,49 @@ def ingest_source(source_path: str, source_kind: str = "file",
     _update_log(conn, result, raw_path=kept)
 
     return result
+
+
+def _undo_page_writes(conn, journal: dict[pathlib.Path, str | None]) -> None:
+    """Restore page files a failed ingest touched: rewrite an existing page's
+    previous text; delete a new file unless an earlier commit in the same run
+    already indexed it (then it is a real page, not an orphan)."""
+    for path, old in journal.items():
+        try:
+            if old is not None:
+                path.write_text(old, encoding="utf-8")
+                continue
+            rel = path.relative_to(REPO).as_posix()  # pages.path is vault-relative
+            if not conn.execute("SELECT 1 FROM pages WHERE path = ?", (rel,)).fetchone():
+                path.unlink(missing_ok=True)
+        except Exception:
+            pass  # best effort: the original exception is what matters
+
+
+def _place_source_page(conn, pw: PageWrite, raw_rel: str) -> None:
+    """Give a source page its address. Re-ingesting the same raw source reuses
+    the existing page (same ULID, same file). A different source the LLM gave
+    the same title gets a dated title and its own file instead of overwriting
+    the first one (two sessions titled alike used to clobber each other)."""
+    base_title = pw.title
+    n = 0
+    while True:
+        rel = pw.path.relative_to(REPO).as_posix()
+        row = conn.execute("SELECT id, path FROM pages WHERE path = ? COLLATE NOCASE "
+                           "AND archived_at IS NULL", (rel,)).fetchone()
+        if not row and not pw.path.exists():
+            return
+        existing = REPO / (row[1] if row else rel)
+        try:
+            same = re.search(r'^raw_path: "?' + re.escape(raw_rel) + r'"?$',
+                             existing.read_text(encoding="utf-8"), re.M) is not None
+        except OSError:
+            same = False
+        if same and row:
+            pw.id, pw.path = row[0], existing
+            return
+        n += 1
+        pw.title = f"{base_title} ({time.strftime('%Y-%m-%d')})" + (f" {n}" if n > 1 else "")
+        pw.path = WIKI / "sources" / f"{_slugify(pw.title)}.md"
 
 
 def _page_id_should_index(conn, pw: PageWrite, frozen: set[str]) -> bool:
@@ -741,9 +861,12 @@ def _cli() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("source", help="path to source file")
     ap.add_argument("--kind", default="file")
+    ap.add_argument("--trust", default="self", choices=list(hera_db.TRUST_TIERS),
+                    help="trust tier for every page this run creates (design §5.1). "
+                         "Use 'untrusted' for content the operator did not author.")
     ap.add_argument("--json", action="store_true", help="emit machine-readable summary")
     a = ap.parse_args()
-    r = ingest_source(a.source, source_kind=a.kind)
+    r = ingest_source(a.source, source_kind=a.kind, trust=a.trust)
     summary = {
         "source": {"id": r.source.id, "title": r.source.title,
                    "path": r.source.path.relative_to(REPO).as_posix()},

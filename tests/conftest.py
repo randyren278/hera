@@ -39,6 +39,33 @@ def pytest_addoption(parser):
                      help="run tests that make real Claude subscription calls")
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "needs_ollama: needs a live embedding endpoint (Ollama + "
+        "nomic-embed-text); skipped when it is down unless HERA_REQUIRE_OLLAMA=1")
+
+
+def _embed_up() -> bool:
+    sys.path.insert(0, str(REPO / "scripts"))
+    try:
+        import embed
+        embed.embed("probe")
+        return True
+    except Exception:
+        return False
+
+
+def pytest_collection_modifyitems(config, items):
+    wanted = [i for i in items if i.get_closest_marker("needs_ollama")]
+    # CI sets HERA_REQUIRE_OLLAMA=1 so an embedder outage fails loudly
+    # instead of silently skipping the retrieval/trust suite.
+    if not wanted or os.environ.get("HERA_REQUIRE_OLLAMA") == "1" or _embed_up():
+        return
+    skip = pytest.mark.skip(reason="embedding endpoint (Ollama) down")
+    for item in wanted:
+        item.add_marker(skip)
+
+
 def _copy_into(dst_vault: pathlib.Path) -> None:
     for rel in _VAULT_COPY:
         src = REPO / rel

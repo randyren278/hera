@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import time
 
 import hookcmd
@@ -35,6 +36,24 @@ def build_fragment(vault: pathlib.Path, os_name: str | None = None) -> dict:
         entry.update(meta)
         hooks[event] = [{"hooks": [entry]}]
     return {"hooks": hooks}
+
+
+class SettingsError(ValueError):
+    """A settings file Hera must edit is unreadable; nothing was changed."""
+
+
+def load_json(path: pathlib.Path) -> dict:
+    """Parse a JSON settings file, or raise SettingsError naming the file."""
+    path = pathlib.Path(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as e:
+        raise SettingsError(f"{path} is not valid JSON ({e}). Fix it and re-run; "
+                            "nothing was changed.") from None
+    if not isinstance(data, dict):
+        raise SettingsError(f"{path} must hold a JSON object. Fix it and re-run; "
+                            "nothing was changed.")
+    return data
 
 
 # --- signatures / merge / strip -------------------------------------------
@@ -67,10 +86,7 @@ def merge_settings(target: pathlib.Path, fragment: dict) -> None:
     Idempotent: dedupes hook-groups by command-tuple signature."""
     target = pathlib.Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        data = json.loads(target.read_text(encoding="utf-8"))
-    else:
-        data = {}
+    data = load_json(target) if target.exists() else {}
     data.setdefault("hooks", {})
     for event, groups in fragment.get("hooks", {}).items():
         existing = data["hooks"].setdefault(event, [])
@@ -82,6 +98,94 @@ def merge_settings(target: pathlib.Path, fragment: dict) -> None:
     _atomic_json(target, data)
 
 
+_HERA_SCRIPTS = tuple(f"/.claude/hooks/{s}" for s in hookcmd.HOOK_SCRIPTS.values()) + (
+    "/scripts/codex_hook.py",)
+_QUOTED = re.compile(r'^"(?P<py>[^"]+)" "(?P<script>[^"]+)"(?: \w+)?$')
+_VENV_PY = ("/.venv/bin/python", "/.venv/Scripts/python.exe")
+LEGACY = "<legacy ~/.claude/hooks install>"
+
+
+def hera_hook_vault(command: str) -> str | None:
+    """The vault a Hera hook command runs from, or None if it isn't one.
+
+    Recognises the current POSIX/Windows command form, the Codex hook form, and
+    the legacy ``. ~/.claude/hera.env && … ~/.claude/hooks/…`` form (returned
+    as ``LEGACY`` because it carries no vault path).
+
+    A script name alone is not proof — a user's own ~/.claude/hooks/
+    session_start.py is common. A Hera hook runs under ITS OWN vault's .venv
+    interpreter, so the interpreter path must be that same vault's."""
+    if "/.claude/hera.env" in command and "/.claude/hooks/" in command:
+        return LEGACY
+    m = _QUOTED.match(command.strip())
+    if not m:
+        return None
+    script = m.group("script").replace("\\", "/")
+    py = m.group("py").replace("\\", "/")
+    for suffix in _HERA_SCRIPTS:
+        if script.endswith(suffix):
+            vault = script[: -len(suffix)]
+            if not any(_norm_vault(py) == _norm_vault(vault + v) for v in _VENV_PY):
+                return None
+            # An existing directory must actually be a Hera vault (a user may
+            # run their own hook from ~/.venv). A path that no longer exists is
+            # a moved/deleted vault whose dead hooks are safe to clear.
+            root = pathlib.Path(vault)
+            if root.exists() and not (root / "scripts" / "hera_db.py").exists():
+                return None
+            return vault
+    return None
+
+
+def _norm_vault(p) -> str:
+    return os.path.normcase(str(p).replace("\\", "/").rstrip("/"))
+
+
+def hera_vaults_in_settings(target: pathlib.Path) -> list[str]:
+    """Sorted distinct vaults whose Hera hooks ``target`` registers."""
+    try:
+        data = json.loads(pathlib.Path(target).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    found = {hera_hook_vault(h.get("command", ""))
+             for groups in data.get("hooks", {}).values()
+             for g in groups for h in g.get("hooks", [])}
+    found.discard(None)
+    return sorted(found)
+
+
+def remove_other_vault_hooks(target: pathlib.Path, vault: pathlib.Path) -> list[str]:
+    """Drop Hera hook entries that point at any vault other than ``vault``.
+
+    Only entries recognised by ``hera_hook_vault`` are touched; a group left
+    empty is dropped. Returns the sorted distinct vaults removed."""
+    target = pathlib.Path(target)
+    if not target.exists():
+        return []
+    data = load_json(target)
+    removed: set[str] = set()
+    hooks = data.get("hooks", {})
+    for ev, groups in list(hooks.items()):
+        kept_groups = []
+        for g in groups:
+            entries = []
+            for h in g.get("hooks", []):
+                owner = hera_hook_vault(h.get("command", ""))
+                if owner is not None and _norm_vault(owner) != _norm_vault(vault):
+                    removed.add(owner)
+                else:
+                    entries.append(h)
+            if entries:
+                kept_groups.append({**g, "hooks": entries})
+        if kept_groups:
+            hooks[ev] = kept_groups
+        else:
+            del hooks[ev]
+    if removed:
+        _atomic_json(target, data)
+    return sorted(removed)
+
+
 def strip_our_hooks(target: pathlib.Path, fragment: dict) -> str:
     """Remove every hook-group matching ``fragment`` from ``target``. Deletes the
     file if our hooks were its sole content. Returns a status string; no-op if
@@ -89,7 +193,7 @@ def strip_our_hooks(target: pathlib.Path, fragment: dict) -> str:
     target = pathlib.Path(target)
     if not target.exists():
         return "no settings.json"
-    data = json.loads(target.read_text(encoding="utf-8"))
+    data = load_json(target)
     frag_sigs = {ev: {_sig(g) for g in groups}
                  for ev, groups in fragment.get("hooks", {}).items()}
     hooks = data.get("hooks", {})
@@ -108,11 +212,13 @@ def strip_our_hooks(target: pathlib.Path, fragment: dict) -> str:
     if not hooks and not other_keys:
         target.unlink()
         return "removed settings.json (contained only Hera hooks)"
+    if not hooks:
+        del data["hooks"]  # leave the file as it was before install
     _atomic_json(target, data)
     return "stripped Hera hook entries from settings.json"
 
 
-# --- backup / restore ------------------------------------------------------
+# --- backup ------------------------------------------------------
 
 def backup_file(src: pathlib.Path) -> pathlib.Path | None:
     """Copy ``src`` to ``src.hera-backup.<timestamp>``. Returns the backup path,
@@ -130,22 +236,10 @@ def backup_file(src: pathlib.Path) -> pathlib.Path | None:
     return dst
 
 
-def restore_latest_backup(target: pathlib.Path) -> bool:
-    """Restore the most-recent ``target.hera-backup.*`` to ``target``.
-    Returns False if no backup exists."""
-    target = pathlib.Path(target)
-    backups = sorted(
-        target.parent.glob(target.name + ".hera-backup.*"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    if not backups:
-        return False
-    target.write_bytes(backups[0].read_bytes())
-    return True
-
-
 def _atomic_json(path: pathlib.Path, data: dict) -> None:
+    # Write through a symlink (dotfiles managers keep settings.json as one);
+    # os.replace on the link itself would swap it for a plain file.
+    path = pathlib.Path(os.path.realpath(path))
     tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
     tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, path)

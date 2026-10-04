@@ -12,6 +12,7 @@ library-import checks reflect the venv, not the system python.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import shutil
 import sqlite3
@@ -21,7 +22,7 @@ import urllib.request
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import ui  # scripts/install/ui.py — TTY-aware pretty-print layer
 
-OLLAMA_BASE = "http://localhost:11434"
+OLLAMA_BASE = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
 
 def _emit(name: str, ok: bool, verbose: bool, detail: str = "") -> bool:
@@ -145,17 +146,27 @@ def _emit_ollama_remedies(status: dict[str, bool]) -> None:
 
 
 def run_preflight(vault: pathlib.Path | None = None, verbose: bool = False) -> int:
-    """Run every environment check. Return 0 iff all pass, else 1."""
+    """Run every environment check. Return 0 iff every *core* check passes.
+
+    Core = the interpreter and libraries the vault cannot run without. Runtime
+    services (Ollama, the embedding model, an agent CLI) only warn: hooks fail
+    open without them and session filing retries later, so a missing service
+    must never stop an install from registering anything."""
     ui.step("preflight:")
     ui.plain(f"  interpreter: {sys.executable}")
 
     results: list[bool] = []
     status: dict[str, bool] = {}
+    warnings: list[str] = []
 
-    def run(name, fn):
+    def run(name, fn, service: bool = False):
         ok, detail = fn()
         status[name] = ok
-        results.append(_emit(name, ok, verbose, detail))
+        if ok or not service:
+            results.append(_emit(name, ok, verbose, detail))
+        else:
+            ui.warn(f"{name}  ({detail})" if detail else name)
+            warnings.append(name)
 
     run("python>=3.8", _check_python)
     run("pyyaml", lambda: _check_import("yaml"))
@@ -165,17 +176,21 @@ def run_preflight(vault: pathlib.Path | None = None, verbose: bool = False) -> i
     run("ulid-py", lambda: _check_import("ulid"))
     run("requests", lambda: _check_import("requests"))
     run("pytest", lambda: _check_import("pytest"))
-    run("ollama-binary", lambda: (shutil.which("ollama") is not None, "not on PATH"))
-    run("ollama-daemon", _check_ollama_daemon)
-    run("nomic-embed-text", _check_nomic_present)
-    run("embed-endpoint", _check_embed_endpoint)
+    run("ollama-binary", lambda: (shutil.which("ollama") is not None, "not on PATH"), service=True)
+    run("ollama-daemon", _check_ollama_daemon, service=True)
+    run("nomic-embed-text", _check_nomic_present, service=True)
+    run("embed-endpoint", _check_embed_endpoint, service=True)
     run("agent-cli", lambda: (shutil.which("claude") is not None or shutil.which("codex") is not None,
-                              "neither claude nor codex on PATH"))
+                              "neither claude nor codex on PATH"), service=True)
 
     _emit_ollama_remedies(status)
 
     if all(results):
-        ui.plain("preflight: ok")
+        if warnings:
+            ui.plain(f"preflight: ok, with warnings ({', '.join(warnings)}) — retrieval "
+                     "and session filing stay off until these are available")
+        else:
+            ui.plain("preflight: ok")
         return 0
     ui.plain("preflight: FAIL")
     return 1

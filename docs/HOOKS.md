@@ -202,11 +202,18 @@ from any (foreign) working directory. The locator file is written by
   - Silent if the prompt matches `CODING_RE`, a heuristic that skips pure
     coding/syntax questions (e.g. "how do i … git/npm/docker…", "write a
     function/regex…", "fix/debug this…").
-  - Otherwise: `hera_db.connect()`, reads `inject_top_n` and
-    `inject_relevance_floor` from the `config` table, then calls
-    `search.hybrid_search(conn, prompt, top_n=..., floor=...)`. No hits → silent.
-  - **Injects** a block headed "Relevant vault pages (pointers only, read the
-    file if needed):", one bullet per hit in the form
+  - Otherwise: `hera_db.connect()`, reads `inject_top_n`,
+    `inject_relevance_floor` and `inject_min_cosine` from `config`, embeds the
+    prompt **once** (`embed_query`, 4 s timeout, no retry — a dead Ollama costs
+    ~0.1 s, not the 10 s hook budget), and runs `hybrid_search` over `hera.db`
+    and, only if `team.db` exists, `team_hybrid_search` (opened without
+    creating it). Hits below the cosine gate are dropped, and a hit without a
+    keyword match needs `inject_strong_cosine` (ADR-15). No hits →
+    silent.
+  - **Injects** a block headed "Relevant vault pages (pointers only — read the
+    file if needed). A page is credited when the final answer cites it as
+    (Source: [[Title]]):" — the second sentence is what gets the model to cite
+    at all (before it, 3 of 421 real sessions cited a page) — one bullet per hit in the form
     `- [[Title]]  (abspath)` followed by the first content line, where `abspath`
     is the **absolute** path under `$HERA_VAULT` (`REPO / h.path`), not
     the bare vault-relative `h.path`. Hooks run from any cwd under the global
@@ -225,7 +232,7 @@ from any (foreign) working directory. The locator file is written by
     `try/except`, then merges those owner-tagged team hits with the local hits by
     the same RRF score (one scale) before taking `top_n`. Team pointers are
     tagged ` (team: <owner>)`. Team pages are indexed only in `team.db` and never
-    enter `hera.db` (isolation invariant — [ADR-14](DECISIONS.md#2-adr-log-01-14) / rule #9 in [CLAUDE.md](../CLAUDE.md) "What NEVER to do"); the nested
+    enter `hera.db` (isolation invariant — [ADR-14](DECISIONS.md#2-adr-log-01-16) / rule #9 in [CLAUDE.md](../CLAUDE.md) "What NEVER to do"); the nested
     try/except means a missing `team.db` or a down embedder degrades to
     local-only and never breaks injection. See [RETRIEVAL.md § local ↔ team](RETRIEVAL.md#4-how-data-flows-local-team)
     and [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team space-index).
@@ -234,7 +241,7 @@ from any (foreign) working directory. The locator file is written by
   prints nothing. This is the make-or-break invariant: injection must degrade to
   silence, never to an error that disrupts the prompt.
 
-For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`), see
+For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`, cosine gate `0.65`), see
 [DECISIONS.md](DECISIONS.md).
 
 ---
@@ -283,6 +290,11 @@ For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`), see
 
 ---
 
+- **Catch-up at SessionEnd:** async Stop hooks are not run for every turn in
+  practice (about a third of real sessions were never scored). The SessionEnd
+  worker therefore calls `stop_score._score` on the full transcript before
+  filing; scoring is cursor-based, so nothing is counted twice.
+
 ## 7. `session_end_file.py`: SessionEnd (session filing)
 
 - **Event:** `SessionEnd`. **Async (`async: true`), timeout 600 s.**
@@ -308,6 +320,20 @@ For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`), see
   After a successful ingest, `_mark_filed` does
   `INSERT OR REPLACE INTO filed_sessions(session_id, filed_at) VALUES (?, ?)`.
   Safe to retry, per `session_id`.
+- **Retry of failed filings:** a failed ingest (Ollama down, LLM quota hit)
+  leaves the distilled `.hera/session-<id>.md` in place with no
+  `filed_sessions` row. Every worker run (Claude or Codex) then calls
+  `retry_pending()`, which files up to 3 such sessions, oldest first. The real
+  session id is read from the file's first line (`# Session transcript <id>`);
+  the filename replaces characters such as `:` with `_` so it is valid on
+  Windows. A per-session claim file under `.hera/claims/` (stale after 2 h)
+  stops two workers from ingesting the same session. Before ingesting, the
+  worker tries to start the Ollama daemon if it isn't answering, and
+  `ingest_source` checks the embedder before the LLM call or any page write,
+  so an outage leaves no orphan pages. After `MAX_ATTEMPTS` (5) failures a
+  session is no longer retried and `--doctor` lists it. A session with less
+  than 200 characters of conversation, or no assistant text, is marked filed
+  without an LLM call (no more "Empty Session Transcript" pages).
 - **Fail-open:** `main()` wraps in `try/except`; errors log
   `"hook error:\n"+traceback` and **return 0**. Inside `run_filing`, missing
   transcript, flatten exception, or ingest exception each log and return 1, but
@@ -330,10 +356,16 @@ its hook twice. The concrete failures:
   `filed_sessions`, but wasteful.
 - **UserPromptSubmit:** inject content emitted twice per prompt.
 
-To prevent this, install step 7 renames the project file
+To prevent this, install step 6 renames the project file
 `.claude/settings.json` → `.claude/settings.json.disabled` (and uninstall
 restores it). During global install, hooks run only from the merged
 `~/.claude/settings.json` entries.
+
+The same double-fire happens when two vault checkouts are both installed:
+each registers its own absolute-path hooks. Install step 4 therefore removes
+Hera hook entries that point at any other vault path (in both
+`~/.claude/settings.json` and `~/.codex/hooks.json`), and `--doctor` FAILs if
+another vault's hooks remain.
 
 ```mermaid
 flowchart TD

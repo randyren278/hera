@@ -6,7 +6,7 @@ orchestration. Works on POSIX and native Windows (no bash, no symlinks).
 
   python install.py                    install (idempotent; safe to re-run)
   python install.py --dry-run          print every action without executing
-  python install.py --uninstall        remove global hooks/skills, restore backup
+  python install.py --uninstall        remove this vault's global hooks/skills
   python install.py --with-global-claudemd
                                        append vault CLAUDE.md into ~/.claude/CLAUDE.md
   python install.py --install-ollama   install/start Ollama without prompting
@@ -57,8 +57,12 @@ def _find_capable_python() -> str | None:
     interpreter (we already know it's incapable when this is called)."""
     here = os.path.realpath(sys.executable) if sys.executable else ""
     seen: set[str] = set()
-    for name in ("python3", "python", "python3.13", "python3.12", "python3.11"):
-        p = shutil.which(name)
+    names = [shutil.which(n) for n in ("python3", "python", "python3.14", "python3.13",
+                                       "python3.12", "python3.11")]
+    # Homebrew's capable python3 is often shadowed on PATH by a python.org build.
+    names += [p for p in ("/opt/homebrew/bin/python3", "/usr/local/bin/python3")
+              if os.path.exists(p)]
+    for p in names:
         if not p:
             continue
         rp = os.path.realpath(p)
@@ -155,6 +159,14 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
         "home ": str(home),
     })
 
+    # Refuse up front if a settings file we must edit is unreadable, so a bad
+    # JSON file never leaves a half-done install behind.
+    import settings as settings_mod  # scripts/install/settings.py
+    import codex
+    for f in (global_settings, codex.home() / "hooks.json"):
+        if f.exists():
+            settings_mod.load_json(f)
+
     # Step 1: preflight (bootstraps .venv, checks Ollama).
     ui.step("step 1/7: preflight")
     if dry:
@@ -182,7 +194,10 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
 
         def _prompt_install_ollama() -> bool:
             if not sys.stdin.isatty():
-                return True  # non-TTY (e.g. run via Claude) → proceed
+                # Non-TTY (Claude running /hera-setup, CI, a script): never run
+                # a remote installer (which may sudo) without consent. Opt in
+                # with --install-ollama; preflight then just warns.
+                return False
             try:
                 reply = input("Ollama not found — install it now? [Y/n] ").strip().lower()
             except EOFError:
@@ -216,7 +231,7 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
     # Step 2: initialize hera.db (idempotent).
     ui.step("step 2/7: hera.db")
     if dry:
-        ui.info("[dry] hera_db.py --init (if hera.db absent)")
+        ui.info("[dry] hera_db.py --init (if hera.db absent); reembed.py --if-needed")
     else:
         db = VAULT / "hera.db"
         if db.exists() and db.stat().st_size > 0:
@@ -230,6 +245,19 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
                 print(f"install: hera.db init failed: {rc.stderr}", file=sys.stderr)
                 return 1
             ui.info("hera.db initialized")
+        # Bring an existing index onto the current embedding scheme (no-op when
+        # already current). Needs Ollama; on failure retrieval keeps working on
+        # the old vectors and --doctor names the command to finish it.
+        import venv as venv_mod
+        py = venv_mod.venv_python(VAULT)
+        for idx in (db, VAULT / "team.db"):
+            if not idx.exists():
+                continue
+            rc = subprocess.run([str(py), str(VAULT / "scripts" / "reembed.py"),
+                                 "--db", str(idx), "--if-needed"],
+                                capture_output=True, text=True)
+            ui.info((rc.stdout or rc.stderr).strip().splitlines()[-1] if (rc.stdout or rc.stderr).strip()
+                    else f"reembed {idx.name}: rc={rc.returncode}")
 
     # Step 3: locator file.
     ui.step(f"step 3/7: locator ({loc_env})")
@@ -253,6 +281,10 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
             backup = settings_mod.backup_file(global_settings)
             if backup:
                 ui.info(f"backed up existing settings.json → {backup}")
+        # One machine, one active vault: hooks left by an install from another
+        # path would otherwise keep firing alongside ours (double inject/file).
+        for other in settings_mod.remove_other_vault_hooks(global_settings, VAULT):
+            ui.warn(f"removed Hera hooks of another vault: {other}")
         settings_mod.merge_settings(global_settings, fragment)
         ui.info("merged.")
 
@@ -264,17 +296,21 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
     else:
         import registration
         registration.register_skills(VAULT, global_skills, SKILL_DIRS, home)
-    if dry:
+    if not codex.present():
+        ui.info("(Codex not found — skipping Codex registration)")
+    elif dry:
         ui.info("[dry] register Codex skills, hooks, locator, and guidance")
     else:
-        import codex
         codex.install(VAULT, SKILL_DIRS, loc_env)
 
     # Step 6: disable project-local settings.json so hooks don't double-fire.
     ui.step("step 6/7: disable project-local settings.json")
     if project_settings.exists():
-        r.do(f"move {project_settings} → {project_disabled}",
-             lambda: os.replace(project_settings, project_disabled))
+        def _disable():
+            os.replace(project_settings, project_disabled)
+            import registration
+            registration.set_flag(home, "disabled_project_settings", True)
+        r.do(f"move {project_settings} → {project_disabled}", _disable)
     else:
         ui.info("(no project-local settings.json to disable)")
 
@@ -287,7 +323,7 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
         if should:
             home.mkdir(parents=True, exist_ok=True)
             _append_global_claudemd(global_md, vault_md)
-            ui.info(f"appended Hera block to {global_md}")
+            ui.info(f"wrote Hera block in {global_md}")
         else:
             ui.info("(skipped — global CLAUDE.md unchanged)")
 
@@ -321,20 +357,44 @@ def do_uninstall(dry: bool) -> int:
     global_md = home / "CLAUDE.md"
     r = Runner(dry)
 
-    if dry:
-        ui.info("[dry] unregister Codex skills, hooks, locator, and guidance")
-    else:
-        import codex
-        codex.uninstall(VAULT)
-
     ui.header("Hera - uninstaller", {
         "vault": str(VAULT),
         "home ": str(home),
         "mode ": f"uninstall   dry={int(dry)}",
     })
 
-    # Step 1: remove copied skills we created (tracked via manifest).
-    ui.step("step 1/5: remove copied skills")
+    # Validate every file we will edit before touching anything.
+    import settings as settings_mod
+    import codex
+    for f in (global_settings, codex.home() / "hooks.json"):
+        if f.exists():
+            settings_mod.load_json(f)
+
+    # Uninstalling a vault that is not the active one must not take the
+    # active vault's shared pieces (locator, skills, guidance) with it.
+    import locator
+    active_vault = locator.parse_locator(loc_env).get("HERA_VAULT")
+    is_active = (not active_vault
+                 or settings_mod._norm_vault(pathlib.Path(active_vault).expanduser().resolve())
+                 == settings_mod._norm_vault(VAULT))
+    if not is_active:
+        ui.warn(f"the active vault is {active_vault}, not this one — removing only "
+                "this vault's own entries")
+
+    if not codex.home().exists():
+        pass
+    elif dry:
+        ui.info("[dry] unregister Codex skills, hooks, locator, and guidance")
+    else:
+        codex.uninstall(VAULT, active=is_active)
+
+    # Whether install disabled a project settings.json (read before step 1,
+    # which may drop the manifest). A clone ships it disabled; leave that be.
+    import registration
+    we_disabled = bool(registration.get_flag(home, "disabled_project_settings"))
+
+    # Step 1: remove skill links/copies we created (tracked via manifest).
+    ui.step("step 1/5: remove Hera skills")
     if dry:
         ui.info(f"[dry] remove Hera skills from {global_skills} (per manifest)")
     else:
@@ -342,25 +402,21 @@ def do_uninstall(dry: bool) -> int:
         removed = registration.unregister_skills(VAULT, global_skills, home)
         ui.info(f"removed {removed} skill dir(s)")
 
-    # Step 2: restore settings.json from backup, or strip our entries.
-    ui.step("step 2/5: restore settings.json")
+    # Step 2: strip our hook entries. Never restore a backup over the live
+    # file: it predates every settings change made since install.
+    ui.step("step 2/5: strip Hera hooks from settings.json")
     if dry:
-        ui.info(f"[dry] restore latest backup of {global_settings} or strip our hooks")
+        ui.info(f"[dry] strip this vault's hooks from {global_settings}")
     else:
         import settings as settings_mod
         fragment = settings_mod.build_fragment(VAULT, os.name)
-        if settings_mod.restore_latest_backup(global_settings):
-            ui.info(f"restored {global_settings} from backup")
-            settings_mod.strip_our_hooks(global_settings, fragment)
-        elif global_settings.exists():
-            settings_mod.strip_our_hooks(global_settings, fragment)
-        else:
-            ui.info("no settings.json and no backup — nothing to restore")
+        ui.info(settings_mod.strip_our_hooks(global_settings, fragment))
 
     # Step 3: remove locator.
     ui.step("step 3/5: remove locator")
-    if not dry:
-        import locator
+    if not is_active:
+        ui.info(f"(locator points at the active vault {active_vault} — kept)")
+    elif not dry:
         if locator.remove_locator(loc_env):
             ui.info(f"removed {loc_env}")
     else:
@@ -368,15 +424,19 @@ def do_uninstall(dry: bool) -> int:
 
     # Step 4: re-enable project-local settings.json.
     ui.step("step 4/5: re-enable project-local settings.json")
-    if project_disabled.exists():
-        r.do(f"move {project_disabled} → {project_settings}",
-             lambda: os.replace(project_disabled, project_settings))
+    if project_disabled.exists() and we_disabled:
+        def _enable():
+            os.replace(project_disabled, project_settings)
+            registration.set_flag(home, "disabled_project_settings", None)
+        r.do(f"move {project_disabled} → {project_settings}", _enable)
     else:
-        ui.info("(no disabled project settings to re-enable)")
+        ui.info("(install did not disable project settings — leaving them as they are)")
 
     # Step 5: strip our CLAUDE.md block.
     ui.step("step 5/5: strip global CLAUDE.md block")
-    if dry:
+    if not is_active:
+        ui.info("(global CLAUDE.md block belongs to the active vault — kept)")
+    elif dry:
         ui.info(f"[dry] remove Hera block from {global_md}")
     elif global_md.exists() and HERA_MD_BEGIN.split("(")[0] in global_md.read_text(encoding="utf-8"):
         _remove_global_claudemd_block(global_md)
@@ -455,6 +515,7 @@ def _backup(path: pathlib.Path) -> pathlib.Path | None:
 
 
 def _atomic_write(path: pathlib.Path, text: str) -> None:
+    path = pathlib.Path(os.path.realpath(path))  # keep a dotfiles symlink intact
     tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
     tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)
@@ -479,6 +540,16 @@ def main(argv: list[str] | None = None) -> int:
     if a.help:
         print(__doc__)
         return 0
+    try:
+        return _dispatch(a, argv)
+    except (RuntimeError, ValueError, OSError) as e:
+        # Expected, user-fixable conditions (a foreign file in the way, bad
+        # JSON, a permissions problem): a clear line, not a traceback.
+        print(f"install: {e}", file=sys.stderr)
+        return 1
+
+
+def _dispatch(a: argparse.Namespace, argv: list[str] | None) -> int:
     if a.uninstall:
         return do_uninstall(a.dry_run)
     # A real install needs a python that can load sqlite extensions. Dry-run

@@ -68,9 +68,11 @@ this vault, so edits to their source take effect without a second install.
 
 Codex asks you to review new hooks once. Restart Codex, open `/hooks`, and trust
 the four Hera hooks to enable automatic recall, scoring, and session filing.
-Existing global agent instructions are preserved. For an install without
-Ollama provisioning, use `python install.py --no-install-ollama` and start
-Ollama yourself before using retrieval.
+Existing global agent instructions are preserved. If Ollama is missing, an
+interactive install asks before running Ollama's official installer; a
+non-interactive one (CI, or an agent running it) skips it unless you pass
+`--install-ollama`. Without Ollama the install still completes: hooks stay
+silent and session filing waits until Ollama is running, then catches up.
 
 ## First use
 

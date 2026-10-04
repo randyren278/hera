@@ -94,3 +94,117 @@ def test_reingest_non_conflicting_keeps_one_row_per_path(vault):
         "SELECT count(*) FROM pages_vec v JOIN pages p ON p.id=v.page_id "
         "WHERE p.archived_at IS NULL").fetchone()[0]
     assert pages == fts == vec, f"index drift: pages={pages} fts={fts} vec={vec}"
+
+
+def test_failure_mid_ingest_leaves_no_orphan_pages(vault):
+    """An exception after page files are written (Ollama dying, LLM quota on
+    the contradiction check) must not leave unindexed pages in wiki/, and an
+    existing page it had already rewritten gets its old text back."""
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    ingest.ingest_source(str(_write_source_file(root)), conn=conn)
+    entity = root / "wiki" / "entities" / "Playwright.md"
+    before_entity = entity.read_text()
+    before_files = sorted(p.relative_to(root) for p in (root / "wiki").rglob("*.md"))
+
+    payload = {
+        "source": {"title": "Second Brief", "one_line": "x", "key_takeaways": [], "body": "b"},
+        "concepts": [{"title": "Brand New Concept", "one_line": "n", "body": "nb", "aliases": []}],
+        "entities": [{"title": "Playwright", "kind": "tool", "one_line": "changed",
+                      "body": "rewritten body", "aliases": []}],
+        "warnings": [],
+    }
+    mp.setattr(ingest, "_call_claude_extract", lambda raw: payload)
+    real_index = ingest._index_page_search
+
+    def dies_on_concept(c, pw):
+        if pw.title == "Brand New Concept":
+            raise ingest._embed.EmbedError("ollama died mid-run")
+        return real_index(c, pw)
+
+    mp.setattr(ingest, "_index_page_search", dies_on_concept)
+    with pytest.raises(ingest._embed.EmbedError):
+        ingest.ingest_source(str(_write_source_file(root, "second.txt")), conn=conn)
+
+    after_files = sorted(p.relative_to(root) for p in (root / "wiki").rglob("*.md")
+                         if ".raw" not in p.parts)
+    assert after_files == [f for f in before_files if ".raw" not in f.parts]
+    assert entity.read_text() == before_entity
+
+
+def test_index_md_lists_each_title_once(vault):
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    ingest.ingest_source(str(_write_source_file(root)), conn=conn)
+    ingest.ingest_source(str(_write_source_file(root, "again.txt")), conn=conn)
+    lines = [l for l in (root / "wiki" / "index.md").read_text().splitlines()
+             if l.startswith("- [[")]
+    assert len(lines) == len(set(l.split("]]")[0] for l in lines)), lines
+
+
+def test_case_variant_title_reuses_the_existing_page(vault):
+    """APFS/NTFS are case-insensitive: "auto-waiting" must not become a second
+    DB row for the file "Auto-Waiting.md"."""
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    ingest.ingest_source(str(_write_source_file(root)), conn=conn)
+    _stub_extract(mp, "auto-waiting", "Playwright")
+    ingest.ingest_source(str(_write_source_file(root, "again.txt")), conn=conn)
+    rows = conn.execute("SELECT path FROM pages WHERE type='concept'").fetchall()
+    assert rows == [("wiki/concepts/Auto-Waiting.md",)]
+
+
+def test_source_page_reingest_reuses_it_and_a_title_clash_does_not_overwrite(vault):
+    """Council round 2: two ingests of one source minted two source rows; two
+    different sessions the LLM titled alike overwrote the first file."""
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    src = _write_source_file(root)
+    ingest.ingest_source(str(src), conn=conn)
+    ingest.ingest_source(str(src), conn=conn)  # same source again
+    rows = conn.execute("SELECT path FROM pages WHERE type='source'").fetchall()
+    assert rows == [("wiki/sources/Playwright Brief.md",)]
+    first = (root / "wiki/sources/Playwright Brief.md").read_text()
+
+    ingest.ingest_source(str(_write_source_file(root, "other.txt")), conn=conn)  # same title
+    paths = sorted(r[0] for r in conn.execute("SELECT path FROM pages WHERE type='source'"))
+    assert len(paths) == 2 and len(set(paths)) == 2, paths
+    assert (root / "wiki/sources/Playwright Brief.md").read_text() == first
+
+
+def test_llm_judgements_run_before_any_write(vault):
+    """Council round 2 (R2-5): contradiction checks are minutes-long LLM calls;
+    they must not run while ingest holds a write transaction."""
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    ingest.ingest_source(str(_write_source_file(root)), conn=conn)
+    payload = {"source": {"title": "Later Brief", "one_line": "x", "key_takeaways": [], "body": "b"},
+               "concepts": [{"title": "Auto-Waiting", "one_line": "y", "body": "new", "aliases": []}],
+               "entities": [], "warnings": []}
+    mp.setattr(ingest, "_call_claude_extract", lambda raw: payload)
+    seen = {}
+
+    def judge(old, new):
+        seen["source_written"] = (root / "wiki/sources/Later Brief.md").exists()
+        seen["in_txn"] = conn.in_transaction
+        return None
+
+    mp.setattr(ingest, "_detect_contradiction", judge)
+    ingest.ingest_source(str(_write_source_file(root, "later.txt")), conn=conn)
+    assert seen == {"source_written": False, "in_txn": False}
+
+
+def test_same_basename_different_sources_never_share_a_page(vault):
+    """Council round 3 (R3-2): raw copies were keyed on the basename, so a/n.md
+    and b/n.md (titled alike by the LLM) looked like one re-ingested source."""
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    (root / "a").mkdir()
+    (root / "b").mkdir()
+    (root / "a" / "n.md").write_text("AAA first source")
+    (root / "b" / "n.md").write_text("BBB second source")
+    ingest.ingest_source(str(root / "a" / "n.md"), conn=conn)
+    ingest.ingest_source(str(root / "b" / "n.md"), conn=conn)
+    assert conn.execute("SELECT count(*) FROM pages WHERE type='source'").fetchone()[0] == 2
+    raws = sorted(p.read_text() for p in (root / "wiki" / ".raw" / "articles").glob("n*.md"))
+    assert raws == ["AAA first source", "BBB second source"]

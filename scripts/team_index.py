@@ -114,12 +114,15 @@ def _index_page(conn, path: pathlib.Path) -> str | None:
     mtime = path.stat().st_mtime
     now = hera_db.time.strftime("%Y-%m-%dT%H:%M:%S")
 
-    # pages row (upsert by id).
+    # pages row (upsert by id). Everything indexed here came out of the team
+    # staging clone, so its trust tier is 'team' by construction — never 'self'
+    # (which is what hera_db's column default would otherwise leave behind).
     conn.execute(
-        "INSERT INTO pages(id, title, aliases, type, path, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "INSERT INTO pages(id, title, aliases, type, path, created_at, updated_at, trust) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 'team') "
         "ON CONFLICT(id) DO UPDATE SET title=excluded.title, aliases=excluded.aliases, "
-        "type=excluded.type, path=excluded.path, updated_at=excluded.updated_at",
+        "type=excluded.type, path=excluded.path, updated_at=excluded.updated_at, "
+        "trust=excluded.trust",
         (pid, title, aliases, type_, rel_path, now, now),
     )
 
@@ -137,7 +140,7 @@ def _index_page(conn, path: pathlib.Path) -> str | None:
 
     # Vector row — identical payload rule as local ingest (title + first ~2000 chars).
     payload = f"{title}\n{body[:2000]}"
-    vec = _embed.embed(payload)
+    vec = _embed.embed_document(payload)
     conn.execute("DELETE FROM pages_vec WHERE page_id = ?", (pid,))
     conn.execute("INSERT INTO pages_vec(page_id, embedding) VALUES (?, ?)",
                  (pid, _embed.pack(vec)))
@@ -179,6 +182,10 @@ def reindex(changed_only: bool = True) -> int:
 
     conn = open_team_db()
     files = _staged_pages()
+    # Vectors from an older embedding scheme never match current queries:
+    # rebuild everything once, then record the scheme.
+    if hera_db.embed_scheme(conn) != _embed.SCHEME:
+        changed_only = False
 
     # Map of page_id → stored mtime for change detection.
     stored: dict[str, float] = {}
@@ -210,6 +217,9 @@ def reindex(changed_only: bool = True) -> int:
             if pid not in seen_ids and not (REPO / rp).exists():
                 _drop_page(conn, pid)
 
+    with conn:
+        conn.execute("INSERT INTO config(key, value) VALUES ('embed_scheme', ?) "
+                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (_embed.SCHEME,))
     for w in warnings:
         sys.stderr.write(w + "\n")
     return indexed

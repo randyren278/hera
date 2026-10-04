@@ -77,16 +77,18 @@ added to the user's existing `~/.codex/AGENTS.md`; other guidance is preserved.
 Codex requires the user to review and trust the hook definitions through
 `/hooks` before they execute.
 
-## Backup + restore
+## Backup + uninstall
 
 `install.py` writes `~/.claude/settings.json.hera-backup.<timestamp>`
 before the very first merge — see `backup_file()` in
-`scripts/install/settings.py`. `--uninstall` restores the newest backup by
-mtime and leaves everything else alone.
+`scripts/install/settings.py`. `--uninstall` strips only this vault's hook
+entries from the live `settings.json`; it never copies a backup over it,
+because a backup predates every settings change made since install. If
+stripping empties the file, it's removed. Backups stay on disk for manual
+recovery.
 
-If no pre-install backup exists (meaning the machine had no user-level
-`settings.json` before install), the uninstaller strips out only our
-hook entries. If that empties the file, it's removed.
+Installing from a second vault path removes the Hera hooks the first one
+registered (`remove_other_vault_hooks()`), so only one vault is ever active.
 
 ## Optional: the global CLAUDE.md block
 
@@ -233,7 +235,7 @@ Three things worth knowing:
 <vault>/scripts/install/venv.py          # per-OS venv resolve + bootstrap
 <vault>/scripts/install/locator.py       # writes ~/.claude/hera.env
 <vault>/scripts/install/hookcmd.py       # per-OS hook command generation
-<vault>/scripts/install/settings.py      # backup/restore/merge/strip helpers
+<vault>/scripts/install/settings.py      # backup/merge/strip + other-vault cleanup
 <vault>/scripts/install/registration.py  # copy skills + manifest-based uninstall
 <vault>/scripts/install/preflight.py     # OS-neutral env checks (doctor + install)
 <vault>/scripts/hera_cli.py             # OS-neutral engine launcher (skills use it)

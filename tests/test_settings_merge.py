@@ -92,16 +92,12 @@ def test_strip_preserves_foreign(tmp_path):
     assert cmds == ["other-tool"]
 
 
-def test_backup_and_restore(tmp_path):
+def test_backup_copies_content(tmp_path):
     target = tmp_path / "settings.json"
     target.write_text('{"v":1}')
     backup = settings_mod.backup_file(target)
-    assert backup is not None and backup.exists()
-    target.write_text('{"v":2}')
-    assert settings_mod.restore_latest_backup(target) is True
-    assert json.loads(target.read_text())["v"] == 1
+    assert backup is not None and json.loads(backup.read_text())["v"] == 1
 
 
 def test_backup_absent_is_none(tmp_path):
     assert settings_mod.backup_file(tmp_path / "nope.json") is None
-    assert settings_mod.restore_latest_backup(tmp_path / "nope.json") is False

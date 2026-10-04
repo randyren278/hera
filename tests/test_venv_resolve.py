@@ -37,3 +37,16 @@ def test_ensure_venv_bootstraps(tmp_path):
     assert py == venv_mod.venv_python(tmp_path)
     # Idempotent: second call returns the same existing interpreter.
     assert venv_mod.ensure_venv(tmp_path, install_deps=False) == py
+
+
+def test_bootstrap_candidates_reach_homebrew_behind_a_shadowing_python(monkeypatch):
+    """CI found it: on macOS a python.org/setup-python build (no sqlite
+    extension loading) shadows Homebrew's python3 on PATH; the bootstrap must
+    still try the Homebrew interpreter instead of giving up."""
+    import venv as venv_mod
+    monkeypatch.setattr(venv_mod.shutil, "which",
+                        lambda n: "/hostedtoolcache/Python/3.12/bin/python3" if n == "python3" else None)
+    monkeypatch.setattr(venv_mod.os.path, "exists", lambda p: p == "/opt/homebrew/bin/python3")
+    # Candidates de-dup by realpath; keep the host's symlinks out of this test.
+    monkeypatch.setattr(venv_mod.os.path, "realpath", lambda p: p)
+    assert "/opt/homebrew/bin/python3" in venv_mod._bootstrap_candidates()

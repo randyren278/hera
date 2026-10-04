@@ -10,11 +10,13 @@
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
+. "$REPO/scripts/e2e_guard.sh"
 
 PY=".venv/bin/python"
 FIXTURE="tests/fixtures/sample_article.md"
 
 echo "== e2e_ingest: reset =="
+e2e_guard_destructive "$REPO" || exit 3
 rm -rf wiki hera.db hera.db-wal hera.db-shm .hera
 $PY scripts/hera_db.py --init >/dev/null
 

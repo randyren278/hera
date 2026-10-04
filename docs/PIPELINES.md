@@ -77,7 +77,7 @@ A contradiction check only runs for a page whose target path **already exists** 
 
 ## 2. Hybrid search: `scripts/search.py`
 
-**Contract:** `hybrid_search(conn, query, top_n=3, floor=0.015, fetch=20) -> list[Hit]`, where `Hit = (page_id, title, path, score, fts_rank, vec_rank)`.
+**Contract:** `hybrid_search(conn, query, top_n=3, floor=0.015, fetch=20, trust_in=..., qvec=None) -> list[Hit]`, where `Hit = (page_id, title, path, score, fts_rank, vec_rank, trust, cosine)`. Pass `qvec` to reuse one query embedding across stores.
 
 Two retrievers run over the same query, each producing a ranked list; the lists are fused with Reciprocal Rank Fusion. The diagram shows the **shape**; the exact numbers are in the prose below it, because a node can't hold the arithmetic legibly.
 
@@ -93,7 +93,7 @@ flowchart LR
 
 **BM25 half (`_fts_hits`).** The query is tokenized with `re.findall(r"\w+", query)`; tokens shorter than 2 characters are dropped; each survivor is quoted as a phrase and OR-joined (`"a" OR "b"`), so it is a bag-of-words match on ANY term. It runs `bm25(pages_fts)` joined through `pages_fts_map` (rowid to page_id), ordered ascending, so **lower `bm25()` is better**. Any `sqlite3.OperationalError` returns `[]` (fail-safe); an empty token list returns `[]`.
 
-**Dense half (`_vec_hits`).** The query is embedded via `embed(query)` (Ollama `nomic-embed-text`, 768-dim, see [DATA-MODEL.md § embeddings](DATA-MODEL.md#5-embeddings)) and packed, then `SELECT page_id, distance FROM pages_vec WHERE embedding MATCH ? ORDER BY distance`, a sqlite-vec KNN where **lower distance is nearer**.
+**Dense half (`_vec_hits`).** The query is embedded via `embed_query(query)` (Ollama `nomic-embed-text`, 768-dim, `search_query:` prefix, unit length; pages are stored via `embed_document` with the `search_document:` prefix — ADR-15) and packed, then `SELECT page_id, distance FROM pages_vec WHERE embedding MATCH ? ORDER BY distance`, a sqlite-vec KNN where **lower distance is nearer**.
 
 **RRF fusion.** Ranks are **1-based positional** (position in each ordered list), not derived from the raw `bm25()` or `distance` values. For each page:
 
@@ -106,12 +106,9 @@ A page ranked by both retrievers gets both terms added; a page ranked by only on
 
 **Ties.** `_rrf_fuse` sorts by score alone (`key=lambda x: -x[1]`) with no secondary key, so two pages with an identical fused score keep their stable input order (FTS hits are added before dense hits). This differs from the cross-store merge in `prompt_inject.py`, which sorts by `(-score, title)` — there, an exact tie is broken alphabetically by title. If you depend on a reproducible top-N ordering, note this asymmetry: within a single store the tie order is incidental; across the local+team merge it is deterministic by title.
 
-**The floor is `0.015`** (the signature default). After sorting, only the top `top_n` are considered, and any hit with `score < 0.015` is skipped. The rationale: with two sources at `k=60`, RRF scores span roughly `0.0` to `0.03`, so `0.015` keeps hits ranked highly by at least one substrate and drops the weakly-fused tail.
+**The floor is `0.015`** (the signature default). After sorting, only the top `top_n` are considered, and any hit with `score < 0.015` is skipped. It only trims rank 7 and below — any page a single retriever ranks 1–6 clears it — so it is **not** a relevance gate. Each `Hit` carries `cosine` (similarity to the query, `None` if not a dense candidate); the injection hook keeps a hit only if `cosine ≥ inject_min_cosine` (ADR-15). The FTS query drops stopwords before OR-ing tokens.
 
 Finally, each surviving page is looked up with `... WHERE id = ? AND archived_at IS NULL`, so **archived or missing pages are skipped** and pruned pages never resurface in retrieval. At most `top_n` (default 3) hits return.
-
-> [!note]
-> The module docstring header says `floor=0.15`; that line is stale. The signature default and the docstring body both say `0.015`, and the code value `0.015` is authoritative. Fix the header if you touch this file; do not "fix" the code to match the stale comment.
 
 Both `RRF_K = 60` and the floor are calibrated against the two-retriever, `k=60` score distribution. Recalibrate the ranking before changing either.
 
@@ -218,9 +215,9 @@ flowchart TD
 
 **Strip (`_strip_body`).** Runs `claude -p` (isolated) (`timeout=600`) with a redactor prompt that REMOVES personal info, named private individuals, and subjective claims/opinions, and KEEPS facts, patterns, framework definitions, well-known public entities, and wikilinks. If the redactor returns the token `SKIP`, the page is dropped (`None`). Code fences are stripped from output.
 
-**Stage (`stage_private_ingest`).** First runs the real private ingest (`ingest.ingest_source`). Then for every produced page it reads the private body, strips frontmatter, strips the body, and writes to `team-staging/<OWNER>/{sources|concepts|entities}/{slug}.md` with `visibility: public` frontmatter added. `OWNER` = env `HERA_OWNER` (default `randy`). Frozen pages (no file on disk because a contradiction froze them) are recorded as skipped `"frozen (contradiction pending)"`; `SKIP`-ped pages as `"redactor said SKIP"`. Returns `{staged[], skipped[], warnings[]}`.
+**Stage (`stage_private_ingest`).** First runs the real private ingest (`ingest.ingest_source`). Then for every produced page it reads the private body, strips frontmatter, strips the body, and writes to `team-staging/<OWNER>/{sources|concepts|entities}/{slug}.md` with `visibility: public` frontmatter added. `OWNER` = `HERA_OWNER` (env, else `~/.claude/hera.env`); unset → `stage` refuses. Frozen pages (no file on disk because a contradiction froze them) are recorded as skipped `"frozen (contradiction pending)"`; `SKIP`-ped pages as `"redactor said SKIP"`. Returns `{staged[], skipped[], warnings[]}`.
 
-**The human push-gate (ADR-08), never auto-push.** Staging is a separate git repo. `render_diff` does `git add -A` + `git diff --cached --no-color` and returns the diff string for human review; it stages nothing to the remote. `commit_and_push(commit_msg)` (`git add -A`, then `git commit`, then `git push`) is a **separate function invoked only by the `push` CLI subcommand**. There is no code path where `stage` or `diff` calls `commit_and_push`. Pushing requires an explicit `push` invocation by the operator.
+**The human push-gate (ADR-08), never auto-push.** Staging is a separate git repo. `render_diff` does `git add -A` + `git diff --cached --no-color` and returns the diff for human review, followed by a deterministic secret scan of the added lines (`BLOCKED — likely secret` for keys/tokens/private keys; `warning` for emails and home-directory paths) and a `review-token` (first 12 hex of the diff's SHA-256). `commit_and_push(commit_msg, confirm)` is a **separate function invoked only by the `push` CLI subcommand**, and it refuses unless `--confirm` equals the review-token of the diff staged *now* (so content changed after review cannot ship) and the scan has no blocking finding. Git runs non-interactively with a 120 s timeout (`GIT_TERMINAL_PROMPT=0`). **What the token does and does not prove:** it binds a push to one specific reviewed diff (tamper-evidence — nothing staged after the review can ship), but code cannot prove a human saw it; an agent that ignored the skill could run `diff` and `push --confirm` back to back. Human approval is enforced by the `/hera-team` instruction to stop and wait, plus the secret scan as a backstop. There is no code path where `stage` or `diff` calls `commit_and_push`. Pushing requires an explicit `push` invocation by the operator.
 
 > [!important]
 > The strip is defense in depth; **the human diff review is the actual safety mechanism.** Never wire `stage`/`diff` to `push`, and never push automatically. The remote is fixed, see [CLAUDE.md § What NEVER to do #1](../CLAUDE.md). On rejection, staging is left as-is (no `git reset`).
@@ -247,7 +244,7 @@ flowchart TD
 
 **Search (`team_search.py`).** `search.team_hybrid_search(team_conn, query, owner=None)` runs the same `_rrf_fuse` BM25+dense fusion over `team.db`, joining `page_meta` to attach `owner`/`source`, and returns dicts (team hits carry `owner`, which the local `Hit` does not). `team_search.py` merges that with the local `hybrid_search` by fused RRF score (same scale) and tags each hit's owner. `--owner NAME` restricts to that teammate and excludes your personal vault. The per-turn hook (`prompt_inject.py`) does the same fusion and tags team pointers ` (team: <owner>)`; the team query sits in its own try/except so a missing `team.db` or a down embedder contributes nothing and never breaks injection (fail-open).
 
-**Isolation invariant.** `team_index.py` opens only `TEAM_DB`; no team page, ULID row, or citation ever enters your personal `hera.db`. That separation is what lets team retrieval surface *everyone's* published pages without polluting your local ranking. See [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team space-index) and [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-14).
+**Isolation invariant.** `team_index.py` opens only `TEAM_DB`; no team page, ULID row, or citation ever enters your personal `hera.db`. That separation is what lets team retrieval surface *everyone's* published pages without polluting your local ranking. See [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team space-index) and [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-16).
 
 ---
 
@@ -258,7 +255,9 @@ Do not restate these values inline elsewhere; link here. Config defaults are see
 | Value | Where it lives | Constraint |
 |---|---|---|
 | RRF k | `RRF_K` in `scripts/search.py` | `= 60`; recalibrate ranking before changing |
-| Relevance floor | `hybrid_search(floor=...)` in `scripts/search.py`; seeded as `inject_relevance_floor` in `config` | `= 0.015`; recalibrate before changing |
+| RRF floor | `hybrid_search(floor=...)` in `scripts/search.py`; seeded as `inject_relevance_floor` in `config` | `= 0.015`; trims the tail only |
+| Injection relevance gate | `config.inject_min_cosine`, `config.inject_strong_cosine` | defaults `0.65` / `0.72` (no-keyword hits need the latter); calibrated on labelled prompts (ADR-15); pinned by `tests/test_inject_gate.py` |
+| Embedding scheme | `embed.SCHEME`, recorded in `config.embed_scheme` | change ⇒ `scripts/reembed.py` |
 | Inject top-N | `config.inject_top_n` | default `3` |
 | Prune min age | `config.prune_min_age_days` | default `30` days |
 | Prune band | `config.prune_pct_low` / `prune_pct_high` | defaults `40` / `70` |

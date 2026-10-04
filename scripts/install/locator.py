@@ -17,7 +17,7 @@ import re
 
 HEADER = [
     "# Hera vault locator — written by install.py",
-    "# Read by global hooks in ~/.claude/hooks/ and by the hera-* skills.",
+    "# Read by the hera-* skills and engines to find this vault.",
 ]
 
 # Lines this module owns and rewrites on every run. Everything else is carried
@@ -27,7 +27,7 @@ HEADER = [
 _MANAGED_RE = re.compile(
     r"^\s*(?:export\s+)?HERA_VAULT\s*=|"
     r"^\s*#\s*Hera vault locator|"
-    r"^\s*#\s*Read by global hooks"
+    r"^\s*#\s*Read by (?:global hooks|the hera-\* skills)"
 )
 
 
@@ -84,9 +84,10 @@ def write_locator(vault: pathlib.Path, target: pathlib.Path | None = None) -> pa
     lines.extend(preserved)
     body = "\n".join(lines).rstrip("\n") + "\n"
 
-    tmp = target.with_name(target.name + f".tmp.{os.getpid()}")
+    real = pathlib.Path(os.path.realpath(target))  # keep a dotfiles symlink intact
+    tmp = real.with_name(real.name + f".tmp.{os.getpid()}")
     tmp.write_text(body, encoding="utf-8")
-    os.replace(tmp, target)
+    os.replace(tmp, real)
     return target
 
 

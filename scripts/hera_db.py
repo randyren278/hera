@@ -28,11 +28,22 @@ import urllib.request
 
 import sqlite_vec
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import embed as _embed  # noqa: E402  (stdlib-only; for the scheme constant)
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 DB_PATH = pathlib.Path(os.environ.get("HERA_DB", REPO / "hera.db"))
 SCORER_LOG = pathlib.Path(os.environ.get("HERA_SCORER_LOG", REPO / ".hera" / "scorer.log"))
 WIKI = REPO / "wiki"
 SETTINGS = REPO / ".claude" / "settings.json"
+
+# Trust tiers (design §5.1). `self` = operator-authored, `team` = a teammate's
+# published page, `untrusted` = anything derived from content the operator did
+# not write (email, web, a tool's output). Only `self` and `team` may ever be
+# injected into a privileged session — see search.hybrid_search(trust_in=...)
+# and .claude/hooks/prompt_inject.py.
+TRUST_TIERS = ("self", "team", "untrusted")
+TRUSTED_TIERS = ("self", "team")
 
 SCHEMA = [
     # Canonical page registry (title→ID resolution lives here)
@@ -45,7 +56,9 @@ SCHEMA = [
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL,
         archived_at TEXT,
-        pinned      INTEGER NOT NULL DEFAULT 0
+        pinned      INTEGER NOT NULL DEFAULT 0,
+        trust       TEXT NOT NULL DEFAULT 'self'
+                    CHECK (trust IN ('self','team','untrusted'))
     )""",
     "CREATE INDEX IF NOT EXISTS idx_pages_title ON pages(title)",
 
@@ -125,6 +138,13 @@ DEFAULT_CONFIG = {
     "prune_pct_high": "70",
     "prune_min_age_days": "30",
     "inject_relevance_floor": "0.015",
+    # Per-hit cosine gate for injection (unit vectors, embed.SCHEME). Calibrated
+    # on the live vault: on-topic prompts' top hits scored >= 0.72, off-topic
+    # prompts' best hits <= 0.62. RRF scores carry no absolute relevance.
+    "inject_min_cosine": "0.65",
+    # Without a keyword (BM25) match, a hit must be this close: short or
+    # entity-only prompts otherwise inject on embedding similarity alone.
+    "inject_strong_cosine": "0.72",
     "inject_top_n": "3",
     "lock_retries": "3",
     "lock_backoff_seconds": "1.6",
@@ -161,9 +181,35 @@ def init_schema(conn: sqlite3.Connection) -> None:
         if not row:
             conn.execute("INSERT INTO schema_version(version, applied_at) VALUES (2, ?)",
                          (time.strftime("%Y-%m-%dT%H:%M:%S"),))
+        # Migration v3: add pages.trust to existing DBs. Same idempotence
+        # pattern as v2. The NOT NULL DEFAULT 'self' backfills every existing
+        # row in one statement — everything already in a vault was written by
+        # the operator, so 'self' is the correct historical tier. sqlite 3.53.3
+        # accepts (and enforces) the CHECK on ADD COLUMN; verified at CP-2.1.
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(pages)")}
+        if "trust" not in cols:
+            conn.execute("ALTER TABLE pages ADD COLUMN trust TEXT NOT NULL "
+                         "DEFAULT 'self' CHECK (trust IN ('self','team','untrusted'))")
+        row = conn.execute("SELECT 1 FROM schema_version WHERE version = 3").fetchone()
+        if not row:
+            conn.execute("INSERT INTO schema_version(version, applied_at) VALUES (3, ?)",
+                         (time.strftime("%Y-%m-%dT%H:%M:%S"),))
         # Seed defaults for any missing config keys — never overwrite.
         for k, v in DEFAULT_CONFIG.items():
             conn.execute("INSERT OR IGNORE INTO config(key, value) VALUES (?, ?)", (k, v))
+        # Embedding scheme: an empty index is born on the current scheme; one
+        # with vectors and no record predates it and needs scripts/reembed.py.
+        if embed_scheme(conn) is None and not conn.execute(
+                "SELECT 1 FROM pages_vec LIMIT 1").fetchone():
+            conn.execute("INSERT INTO config(key, value) VALUES ('embed_scheme', ?)",
+                         (_embed.SCHEME,))
+
+
+def embed_scheme(conn: sqlite3.Connection) -> str | None:
+    """The embedding scheme the stored vectors were built with (None = legacy:
+    raw, unprefixed, unnormalized vectors)."""
+    row = conn.execute("SELECT value FROM config WHERE key='embed_scheme'").fetchone()
+    return row[0] if row else None
 
 
 def ensure_ready(db_path: pathlib.Path = DB_PATH) -> sqlite3.Connection:
@@ -192,30 +238,61 @@ def _claude_home() -> pathlib.Path:
 
 
 def _events_referencing_vault(settings_path: pathlib.Path, vault: pathlib.Path) -> list[str]:
-    """Hook events in ``settings_path`` whose command references ``vault``.
-
-    Content-based (substring on the vault path), never readlink — matching the
-    installer's own hook-matching invariant. Returns [] on any error/absence.
+    """Hook events in ``settings_path`` whose Hera hook command runs from
+    exactly ``vault`` (parsed with settings.hera_hook_vault — a path prefix
+    such as /x/hera vs /x/hera-old is not a match). [] on any error/absence.
     """
     if not settings_path.exists():
         return []
     import json
+    sys.path.insert(0, str(REPO / "scripts" / "install"))
+    import settings as settings_mod
     try:
         hooks = json.loads(settings_path.read_text()).get("hooks", {})
     except Exception:
         return []
-    needle = str(vault)
+    here = settings_mod._norm_vault(vault)
     found = []
     for ev in _HOOK_EVENTS:
         for group in hooks.get(ev, []):
-            cmds = [h.get("command", "") for h in group.get("hooks", [])]
-            if any(needle in c for c in cmds):
+            owners = [settings_mod.hera_hook_vault(h.get("command", ""))
+                      for h in group.get("hooks", [])]
+            if any(o and settings_mod._norm_vault(o) == here for o in owners):
                 found.append(ev)
                 break
     return found
 
 
-def _doctor_hooks() -> None:
+def _doctor_global_conflicts(home_settings: pathlib.Path, state: dict) -> None:
+    """FAIL when another vault's hooks are also registered, or when the locator
+    names a different vault: either way two vaults' hooks/skills disagree and
+    every session double-injects or files into the wrong place."""
+    sys.path.insert(0, str(REPO / "scripts" / "install"))
+    import locator
+    import settings as settings_mod
+    here = settings_mod._norm_vault(REPO)
+    others = [v for v in settings_mod.hera_vaults_in_settings(home_settings)
+              if settings_mod._norm_vault(v) != here]
+    if others:
+        _fail(f"hooks from another vault also registered in {home_settings}: {others} "
+              f"— re-run `python {REPO / 'install.py'}` to make this the only active vault",
+              state)
+    codex_hooks = pathlib.Path(os.environ.get("CODEX_HOME", pathlib.Path.home() / ".codex")) / "hooks.json"
+    if codex_hooks.exists():
+        codex_vaults = settings_mod.hera_vaults_in_settings(codex_hooks)
+        stray = [v for v in codex_vaults if settings_mod._norm_vault(v) != here]
+        if stray:
+            _fail(f"Codex hooks ({codex_hooks}) use a different vault: {stray} — Claude and "
+                  f"Codex must share one; re-run `python {REPO / 'install.py'}`", state)
+        elif codex_vaults:
+            _ok(f"Codex hooks use this vault ({codex_hooks})")
+    loc = locator.parse_locator(_claude_home() / "hera.env").get("HERA_VAULT")
+    if loc and settings_mod._norm_vault(pathlib.Path(loc).expanduser()) != here:
+        _fail(f"locator {_claude_home() / 'hera.env'} points at {loc}, not this vault "
+              f"— re-run `python {REPO / 'install.py'}`", state)
+
+
+def _doctor_hooks(state: dict | None = None) -> None:
     """Report hook registration, aware of BOTH install modes (global + local).
 
     Global: ~/.claude/settings.json holds absolute commands pointing at this
@@ -223,10 +300,12 @@ def _doctor_hooks() -> None:
     ~/.claude/settings.json that registers *some other* vault's hooks is not
     this vault's registration — hence the vault-path match, not a key check.
     """
+    state = state if state is not None else {"fail": False}
     home_settings = _claude_home() / "settings.json"
     global_events = _events_referencing_vault(home_settings, REPO)
     if global_events:
         _ok(f"hooks registered globally ({home_settings}): {global_events}")
+        _doctor_global_conflicts(home_settings, state)
         return
 
     # Fall back to the project-local install mode.
@@ -243,7 +322,18 @@ def _doctor_hooks() -> None:
             _warn(f"settings.json unreadable: {e}")
         return
 
-    # Neither mode active. If a .disabled project settings exists, this vault
+    # Neither mode active. Another vault's hooks registered globally means this
+    # checkout is not the active vault — every session files elsewhere.
+    sys.path.insert(0, str(REPO / "scripts" / "install"))
+    import settings as settings_mod
+    others = settings_mod.hera_vaults_in_settings(home_settings)
+    if others:
+        _fail(f"hooks in {home_settings} belong to another vault {others}, not this one "
+              f"— run `python {REPO / 'install.py'}` here to make this the active vault",
+              state)
+        return
+
+    # If a .disabled project settings exists, this vault
     # was globally installed but its hooks now point elsewhere (e.g. a template
     # clone whose active vault is a different one) — say so plainly.
     if SETTINGS.with_suffix(".json.disabled").exists():
@@ -315,6 +405,28 @@ def doctor(verbose: bool = False) -> int:
     else:
         _fail(f"integrity_check: {ic}", state)
 
+    # 3b. Embedding scheme: vectors built under an older scheme are compared
+    #     against current-scheme queries and rank badly.
+    scheme = embed_scheme(conn)
+    if scheme == _embed.SCHEME:
+        _ok(f"embedding scheme ({scheme})")
+    else:
+        _fail(f"embedding scheme is {scheme or 'legacy'}, expected {_embed.SCHEME} — run "
+              f"`{sys.executable} {REPO / 'scripts' / 'reembed.py'}`", state)
+
+    team_db = pathlib.Path(os.environ.get("HERA_TEAM_DB", REPO / "team.db"))
+    if team_db.exists():
+        try:
+            tconn = connect(team_db)
+            tscheme = embed_scheme(tconn)
+            has_vec = tconn.execute("SELECT 1 FROM pages_vec LIMIT 1").fetchone()
+            if has_vec and tscheme != _embed.SCHEME:
+                _fail(f"team.db embedding scheme is {tscheme or 'legacy'} — team pages never "
+                      f"pass the injection gate; run `{sys.executable} "
+                      f"{REPO / 'scripts' / 'team_index.py'} reindex --all`", state)
+        except sqlite3.Error as e:
+            _warn(f"team.db unreadable: {e}")
+
     # 4. sqlite-vec sanity.
     try:
         v = conn.execute("SELECT vec_version()").fetchone()[0]
@@ -324,7 +436,8 @@ def doctor(verbose: bool = False) -> int:
 
     # 5. Ollama ping.
     try:
-        with urllib.request.urlopen("http://localhost:11434/api/version", timeout=2) as r:
+        ollama = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+        with urllib.request.urlopen(f"{ollama}/api/version", timeout=2) as r:
             v = r.read().decode()
         _ok(f"ollama {v.strip()}")
     except Exception as e:
@@ -353,6 +466,41 @@ def doctor(verbose: bool = False) -> int:
     else:
         _ok("pending_deltas (0 unmerged)")
 
+    # 7a. Orphan pages: Markdown in wiki/ that no pages row points at (left by
+    #     an ingest that failed before this build's write journal existed).
+    #     They are never searched; the user decides whether to delete them.
+    if WIKI.exists():
+        indexed = {r[0] for r in conn.execute("SELECT path FROM pages")}
+        orphans = sorted(p.relative_to(REPO).as_posix()
+                         for sub in ("sources", "concepts", "entities", "questions")
+                         for p in (WIKI / sub).glob("*.md")
+                         if p.relative_to(REPO).as_posix() not in indexed)
+        if orphans:
+            _warn(f"orphan pages ({len(orphans)}) not in the index, never searched: "
+                  + "; ".join(orphans[:5]) + (" …" if len(orphans) > 5 else "")
+                  + " — `scripts/reindex_orphans.py --apply` indexes them")
+        else:
+            _ok("orphan pages (0)")
+
+    # 7b. Sessions whose filing failed and await retry_pending().
+    try:
+        sys.path.insert(0, str(REPO / ".claude" / "hooks"))
+        import session_end_file as sef
+        pending = sef._pending(conn)
+        stuck = [sid for sid, _ in pending if sef._attempts(sid) >= sef.MAX_ATTEMPTS
+                 or sef._tries(sid) >= sef.MAX_TOTAL_TRIES]
+        if stuck:
+            _warn(f"sessions that kept failing to file ({len(stuck)}), no longer retried: "
+                  f"{', '.join(stuck[:3])} — see .hera/filing.log; delete "
+                  f".hera/claims/*.attempts and *.tries to retry")
+        if len(pending) > len(stuck):
+            _warn(f"unfiled sessions ({len(pending) - len(stuck)}) — retried automatically "
+                  "at the next session end; see .hera/filing.log")
+        elif not pending:
+            _ok("unfiled sessions (0)")
+    except Exception as e:
+        _warn(f"unfiled-session scan failed: {e}")
+
     # 8. Scorer log freshness — flag if it has grown in the last hour.
     if SCORER_LOG.exists():
         age = time.time() - SCORER_LOG.stat().st_mtime
@@ -370,7 +518,7 @@ def doctor(verbose: bool = False) -> int:
     #    - project-local: hooks live in the vault's own .claude/settings.json.
     # Prefer the global signal (commands referencing this vault), then fall
     # back to the local file, else report an informative — not alarming — note.
-    _doctor_hooks()
+    _doctor_hooks(state)
 
     return 1 if state["fail"] else 0
 
