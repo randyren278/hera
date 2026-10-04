@@ -32,9 +32,14 @@ REPO = pathlib.Path(_env_vault).resolve() if _env_vault else pathlib.Path(__file
 FILING_LOG = pathlib.Path(os.environ.get("HERA_FILING_LOG", REPO / ".hera" / "filing.log"))
 
 
+LOG_MAX_BYTES = 1_000_000  # rotate to filing.log.1 past this (one generation)
+
+
 def _log(msg: str) -> None:
     try:
         FILING_LOG.parent.mkdir(parents=True, exist_ok=True)
+        if FILING_LOG.exists() and FILING_LOG.stat().st_size > LOG_MAX_BYTES:
+            os.replace(FILING_LOG, FILING_LOG.with_name(FILING_LOG.name + ".1"))
         with FILING_LOG.open("a") as f:
             f.write(f"[{time.strftime('%Y-%m-%dT%H:%M:%S')}] {msg}\n")
     except Exception:
@@ -157,9 +162,14 @@ def _file_scratch(conn, scratch: pathlib.Path, session_id: str) -> int:
         _ensure_embed_ready()
         r = ingest.ingest_source(str(scratch), source_kind="session")
         _mark_filed(conn, session_id)
+        # ingest preserved the raw copy under wiki/.raw/; this one is redundant.
+        scratch.unlink(missing_ok=True)
     except Exception:
+        tb = traceback.format_exc()
+        # Nested-CLI stderr can echo the whole extraction prompt (transcript
+        # text); keep the log useful without copying the session into it.
         _log(f"ingest error (session {session_id} left pending for retry):\n"
-             + traceback.format_exc())
+             + (tb if len(tb) <= 3000 else tb[:1500] + "\n…[truncated]…\n" + tb[-1500:]))
         return 1
     finally:
         _release(session_id)
@@ -207,8 +217,10 @@ def _catch_up_score(transcript_path: str, session_id: str) -> None:
         _log("catch-up scoring error:\n" + traceback.format_exc())
 
 
-def _pending(conn) -> list[tuple[str, pathlib.Path]]:
-    """Distilled sessions with no filed_sessions row, oldest first."""
+def _pending(conn, prune: bool = False) -> list[tuple[str, pathlib.Path]]:
+    """Distilled sessions with no filed_sessions row, oldest first. With
+    ``prune``, scratch files of sessions already filed are removed on the way
+    (retry_pending does this; read-only callers such as doctor do not)."""
     out = []
     for p in sorted((REPO / ".hera").glob("session-*.md"), key=lambda p: p.stat().st_mtime):
         try:
@@ -218,8 +230,12 @@ def _pending(conn) -> list[tuple[str, pathlib.Path]]:
             continue
         if first.startswith(HEADER):
             sid = first[len(HEADER):].strip()
-            if sid and not _already_filed(conn, sid):
+            if not sid:
+                continue
+            if not _already_filed(conn, sid):
                 out.append((sid, p))
+            elif prune and not _claim_path(sid).exists():
+                p.unlink(missing_ok=True)
     return out
 
 
@@ -233,7 +249,7 @@ def retry_pending(limit: int = RETRY_LIMIT) -> int:
     filed = 0
     backend = os.environ.get("HERA_LLM_BACKEND")
     try:
-        for sid, scratch in _pending(conn):
+        for sid, scratch in _pending(conn, prune=True):
             if filed >= limit:
                 break
             if _claim_path(sid).exists():

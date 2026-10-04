@@ -120,6 +120,7 @@ def _file(transcript: str, session: str) -> None:
         os.environ["HERA_LLM_BACKEND"] = "codex"
         filing = _module("session_end_file")
         filing.run_filing(str(normalized), f"codex:{session}")
+        normalized.unlink(missing_ok=True)  # distilled into .hera/session-*.md
         filing.retry_pending()
 
 

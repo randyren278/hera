@@ -75,11 +75,12 @@ def test_failed_session_is_retried_later(filing):
 
 def test_scratch_name_is_portable_but_id_is_preserved(filing):
     sef, tmp, calls, state, db = filing
-    state["fail"] = False
-    assert sef.run_filing(str(_transcript(tmp, "c")), "codex:01a1-xyz") == 0
+    assert sef.run_filing(str(_transcript(tmp, "c")), "codex:01a1-xyz") == 1  # stays pending
     names = [p.name for p in (tmp / ".hera").glob("session-*.md")]
     assert names and all(":" not in n for n in names), names  # Windows-safe
-    assert _filed(db) == {"codex:01a1-xyz"}
+    state["fail"] = False
+    assert sef.retry_pending() == 1
+    assert _filed(db) == {"codex:01a1-xyz"}  # the real id, read from the header
 
 
 def test_retry_respects_limit_and_claims(filing):
@@ -134,3 +135,25 @@ def test_session_end_catches_up_citations_a_missed_stop_hook_dropped(filing):
     sef._catch_up_score(str(tp), "sess-x")  # cursor-based: never double counts
     rows = _init(db).execute("SELECT page_id, tier FROM citations").fetchall()
     assert rows == [("P1", "final")]
+
+
+def test_filed_scratch_files_are_cleaned_up(filing):
+    """A filed session's distilled copy is redundant (ingest keeps the raw copy
+    under wiki/.raw/), so .hera/ must not grow forever."""
+    sef, tmp, calls, state, db = filing
+    state["fail"] = False
+    sef.run_filing(str(_transcript(tmp, "e")), "sess-e")
+    stale = tmp / ".hera" / "session-old.md"
+    stale.write_text("# Session transcript sess-old\n")
+    _init(db).execute("INSERT INTO filed_sessions VALUES ('sess-old','t')").connection.commit()
+    sef.retry_pending()
+    assert not list((tmp / ".hera").glob("session-*.md"))
+
+
+def test_logs_rotate(filing, monkeypatch):
+    sef, tmp, *_ = filing
+    monkeypatch.setattr(sef, "LOG_MAX_BYTES", 100)
+    for _ in range(20):
+        sef._log("x" * 20)
+    log = tmp / ".hera" / "filing.log"
+    assert log.stat().st_size <= 200 and log.with_suffix(".log.1").exists()

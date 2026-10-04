@@ -42,9 +42,14 @@ SOURCE_RE = re.compile(r"\(Source:\s*\[\[([^\]]+)\]\]\)")
 WIKILINK_RE = re.compile(r"\[\[([^\]\|]+)(?:\|[^\]]+)?\]\]")
 
 
+LOG_MAX_BYTES = 1_000_000  # rotate to scorer.log.1 past this (one generation)
+
+
 def _log(msg: str) -> None:
     try:
         SCORER_LOG.parent.mkdir(parents=True, exist_ok=True)
+        if SCORER_LOG.exists() and SCORER_LOG.stat().st_size > LOG_MAX_BYTES:
+            os.replace(SCORER_LOG, SCORER_LOG.with_name(SCORER_LOG.name + ".1"))
         with SCORER_LOG.open("a") as f:
             f.write(f"[{time.strftime('%Y-%m-%dT%H:%M:%S')}] {msg}\n")
     except Exception:
