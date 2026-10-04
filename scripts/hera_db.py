@@ -441,7 +441,13 @@ def doctor(verbose: bool = False) -> int:
             v = r.read().decode()
         _ok(f"ollama {v.strip()}")
     except Exception as e:
-        _warn(f"ollama unreachable ({e}) — injection will fail-open")
+        try:
+            sys.path.insert(0, str(REPO / "scripts" / "install"))
+            import ollama_provision
+            keep = ollama_provision.persistent_start_hint()
+        except Exception:
+            keep = "start the Ollama app"
+        _warn(f"ollama unreachable ({e}) — injection will fail-open; keep it running with: {keep}")
 
     # 6. Stale lock scan (only meaningful once wiki/ exists).
     stale = 0

@@ -206,7 +206,7 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
 
         ok, detail = ollama_provision.ensure_ollama(
             dry=False, assume_yes=ollama_yes, prompt_fn=_prompt_install_ollama)
-        if not ok:
+        if not ok or "this boot only" in detail:
             ui.warn(f"ollama: {detail}")
         # Provision the embedding model before preflight verifies it. Best-effort:
         # a note on failure, never fatal — preflight below is the pass/fail gate.

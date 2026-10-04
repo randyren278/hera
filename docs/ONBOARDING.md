@@ -93,6 +93,7 @@ Each has a verify-command and the expected output. A prereq you can't verify wil
 |---|---|---|
 | Ollama installed | `ollama --version` | prints a version |
 | Ollama daemon up | `curl -s http://localhost:11434/api/version` | JSON with a version (not a connection error) |
+| Ollama starts at login | macOS: `brew services list` · Linux: `systemctl is-enabled ollama` | `ollama started` · `enabled` (see the README's "Keep Ollama running") |
 | Embedding model pulled | `ollama pull nomic-embed-text` | "success" (the first pull downloads the model and may take a few minutes) |
 | Claude Code CLI | `claude --version` | prints a version |
 | Python 3.8+ | `python3 --version` | 3.8 or higher |
@@ -148,7 +149,10 @@ You closed the first half of the [core loop](#2-the-core-loop-one-diagram): a so
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Ingest produces nothing; injection empty | Ollama daemon not running | `ollama serve` (or start the app), then retry |
+| Ingest produces nothing; injection empty | Ollama daemon not running | Start it persistently — macOS `brew services start ollama`, Linux `sudo systemctl enable --now ollama`, or the Ollama app — then retry |
+| Injection worked, then went silent after a reboot | Ollama was a one-off `ollama serve` (e.g. started by the installer), not a login service | Same as above; `--doctor` shows `ollama unreachable` |
+| `brew services list` shows `ollama  error` | A hand-started `ollama serve` already holds port 11434 | `pkill -f "ollama serve"; brew services restart ollama` |
+| Homebrew: "You have not agreed to the Xcode license" | macOS Xcode license not accepted | `sudo xcodebuild -license accept`, then retry the `brew` command |
 | `--doctor` warns "ollama unreachable" | Same as above | Start Ollama; the doctor pings `http://localhost:11434/api/version` |
 | Ingest errors on embeddings | `nomic-embed-text` not pulled | `ollama pull nomic-embed-text` |
 | Skill/hook commands say vault not found | `$HERA_VAULT` unset | Global install writes it to `~/.claude/hera.env`; project-local mode falls back to the vault path automatically |

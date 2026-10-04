@@ -113,3 +113,26 @@ def test_ensure_ollama_installed_but_down_tries_start(monkeypatch):
     monkeypatch.setattr(op, "ollama_on_path", lambda: True)
     ok, detail = op.ensure_ollama(dry=True, assume_yes=True)
     assert ok and "start" in detail.lower()
+
+
+@pytest.mark.parametrize("system,which,expect", [
+    ("Darwin", {"brew": "/opt/homebrew/bin/brew"}, "brew services start ollama"),
+    ("Darwin", {}, "Launch at login"),
+    ("Linux", {}, "systemctl enable --now ollama"),
+    ("Windows", {}, "Ollama app"),
+])
+def test_persistent_start_hint_per_os(monkeypatch, system, which, expect):
+    """A daemon the installer spawns lasts one boot; say how to keep it running."""
+    monkeypatch.setattr(op.platform, "system", lambda: system)
+    monkeypatch.setattr(op.shutil, "which", lambda n: which.get(n))
+    assert expect in op.persistent_start_hint()
+
+
+def test_spawned_daemon_reports_it_is_this_boot_only(monkeypatch):
+    up = iter([False, True])
+    monkeypatch.setattr(op.ollama, "_daemon_up", lambda: next(up))
+    monkeypatch.setattr(op.shutil, "which", lambda n: "/usr/bin/ollama" if n == "ollama" else None)
+    monkeypatch.setattr(op.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(op.subprocess, "Popen", lambda *a, **k: None)
+    ok, detail = op.start_daemon()
+    assert ok and "this boot only" in detail and "systemctl" in detail

@@ -133,6 +133,20 @@ def install_binary(dry: bool = False) -> tuple[bool, str]:
     return (ok, "installed" if ok else f"install failed ({detail})")
 
 
+def persistent_start_hint() -> str:
+    """How to keep Ollama running across reboots on this OS. A daemon Hera
+    spawns itself (`ollama serve`) lasts only until logout/reboot."""
+    system = platform.system()
+    if system == "Darwin":
+        if shutil.which("brew"):
+            return ("brew services start ollama (stop any manually started "
+                    "`ollama serve` first, or the service can't bind port 11434)")
+        return "open the Ollama app and keep its Launch at login setting on"
+    if system == "Linux":
+        return "sudo systemctl enable --now ollama (the service Ollama's installer creates)"
+    return "launch the Ollama app once; it starts at login"
+
+
 def start_daemon(dry: bool = False, wait_s: float = 10.0) -> tuple[bool, str]:
     """Start the Ollama daemon if it isn't already up. Best-effort; never raises.
 
@@ -170,7 +184,10 @@ def start_daemon(dry: bool = False, wait_s: float = 10.0) -> tuple[bool, str]:
     deadline = time.monotonic() + wait_s
     while time.monotonic() < deadline:
         if ollama._daemon_up():
-            return True, "daemon started"
+            if platform.system() == "Windows":
+                return True, "daemon started"
+            return True, ("daemon started for this boot only — to keep it running: "
+                          + persistent_start_hint())
         time.sleep(0.5)
     return False, f"daemon did not come up within {wait_s:.0f}s"
 

@@ -74,6 +74,23 @@ non-interactive one (CI, or an agent running it) skips it unless you pass
 `--install-ollama`. Without Ollama the install still completes: hooks stay
 silent and session filing waits until Ollama is running, then catches up.
 
+**Keep Ollama running.** Hera needs Ollama whenever you prompt. If the
+installer starts it for you, that process lasts only until you log out or
+reboot (it says so). Make it start at login:
+
+| OS | Command |
+|---|---|
+| macOS (Homebrew) | `brew services start ollama` |
+| macOS (Ollama app) | keep the app's **Launch at login** setting on |
+| Linux | `sudo systemctl enable --now ollama` |
+| Windows | the Ollama app starts at login |
+
+On macOS, stop any `ollama serve` you started by hand first
+(`pkill -f "ollama serve"`); otherwise it holds port 11434 and
+`brew services list` shows the service as `error`. If Homebrew refuses with
+"You have not agreed to the Xcode license", run
+`sudo xcodebuild -license accept` once, then retry.
+
 ## First use
 
 Open Claude Code or Codex in any project. In Claude Code, run `/hera-setup`;

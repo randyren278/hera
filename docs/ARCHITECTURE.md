@@ -205,7 +205,7 @@ The maintainer's second question after "can I touch this?" is "it broke, where d
 | Symptom | Probable cause | Confirm here | Recover |
 |---|---|---|---|
 | Writes not landing in `wiki/` | Page was locked during write | `wiki/.pending/*.delta.md` (unmerged deltas) | Merge on next `locks.lock()` acquire for that page; force by re-running ingest |
-| Injection produces no pointers | Ollama down / empty vault / prompt matched the coding heuristic | Doctor's Ollama check; `.hera/` has no inject log (inject is silent) | Start Ollama, pull `nomic-embed-text`; injection fail-opens by design |
+| Injection produces no pointers | Ollama down / empty vault / prompt matched the coding heuristic | Doctor's Ollama check; `.hera/` has no inject log (inject is silent) | Start Ollama as a login service (README → "Keep Ollama running"), pull `nomic-embed-text`; injection fail-opens by design |
 | Citations not scoring | Stop hook errored, or no final-answer wikilinks | `.hera/scorer.log` | Re-run the turn; check `(Source: [[Title]])` syntax; titles must resolve in `pages` |
 | Session not filed | SessionEnd worker errored, or already filed | `.hera/filing.log`; `filed_sessions` row | Idempotent, so safe to re-invoke; delete the `filed_sessions` row only to force a re-file |
 | Hooks not firing at all | `$HERA_VAULT` unset / bad symlinks | `~/.claude/hera.env`; `readlink ~/.claude/hooks/*.py` | Re-run `install.sh`; env file must `export HERA_VAULT` |

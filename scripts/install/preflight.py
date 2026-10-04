@@ -137,8 +137,12 @@ def _emit_ollama_remedies(status: dict[str, bool]) -> None:
         ui.warn("  or re-run install.py, which can install it for you.")
     elif status.get("ollama-daemon") is False:
         # Binary present but daemon down.
-        ui.warn("ollama installed but not running — start it (`ollama serve` "
-                "or launch the app), or re-run install.py.")
+        try:
+            import ollama_provision
+            keep = ollama_provision.persistent_start_hint()
+        except Exception:
+            keep = "start the Ollama app"
+        ui.warn(f"ollama installed but not running — keep it running with: {keep}")
     elif status.get("nomic-embed-text") is False:
         ui.warn("embedding model missing — pull it with: "
                 "ollama pull nomic-embed-text (install.py / hera-setup do this "
