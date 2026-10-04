@@ -125,9 +125,15 @@ def hera_hook_vault(command: str) -> str | None:
     for suffix in _HERA_SCRIPTS:
         if script.endswith(suffix):
             vault = script[: -len(suffix)]
-            if any(_norm_vault(py) == _norm_vault(vault + v) for v in _VENV_PY):
-                return vault
-            return None
+            if not any(_norm_vault(py) == _norm_vault(vault + v) for v in _VENV_PY):
+                return None
+            # An existing directory must actually be a Hera vault (a user may
+            # run their own hook from ~/.venv). A path that no longer exists is
+            # a moved/deleted vault whose dead hooks are safe to clear.
+            root = pathlib.Path(vault)
+            if root.exists() and not (root / "scripts" / "hera_db.py").exists():
+                return None
+            return vault
     return None
 
 

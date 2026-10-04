@@ -98,3 +98,17 @@ def test_users_own_hook_named_like_ours_is_never_touched(tmp_path):
     cmds = [h["command"] for g in json.loads(target.read_text())["hooks"]["SessionStart"]
             for h in g["hooks"]]
     assert cmds == [own]
+
+
+def test_home_level_venv_user_hook_is_not_a_vault(tmp_path):
+    """Council round 3 P3: "~/.venv/bin/python" "~/.claude/hooks/session_start.py"
+    matched the same-vault-interpreter rule with vault == $HOME."""
+    home = tmp_path / "me"
+    (home / ".venv" / "bin").mkdir(parents=True)
+    cmd = f'"{home}/.venv/bin/python" "{home}/.claude/hooks/session_start.py"'
+    assert settings_mod.hera_hook_vault(cmd) is None
+    vault = tmp_path / "vault"
+    (vault / "scripts").mkdir(parents=True)
+    (vault / "scripts" / "hera_db.py").write_text("")
+    real = f'"{vault}/.venv/bin/python" "{vault}/.claude/hooks/session_start.py"'
+    assert settings_mod.hera_hook_vault(real) == vault.as_posix()

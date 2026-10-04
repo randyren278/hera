@@ -136,3 +136,8 @@ def uninstall(vault: pathlib.Path, active: bool = True) -> None:
         elif os.name == "nt" and path.is_file() and path.read_bytes() == source.read_bytes():
             path.unlink()
     _update_agents(target / "AGENTS.md", vault, remove=True)
+    for d in (target / "hera", target / "skills"):  # leave no empty dirs we made
+        try:
+            d.rmdir()
+        except OSError:
+            pass  # absent, or holds something that isn't ours
