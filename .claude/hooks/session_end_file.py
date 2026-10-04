@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import time
@@ -56,11 +57,120 @@ def _mark_filed(conn, session_id: str) -> None:
     conn.commit()
 
 
+HEADER = "# Session transcript "
+CLAIM_STALE_S = 2 * 3600   # a worker that died mid-ingest frees its claim
+RETRY_LIMIT = 3            # pending sessions retried per worker run
+
+
+def _scratch_for(session_id: str) -> pathlib.Path:
+    # Codex ids look like "codex:<uuid>"; ':' is illegal in Windows filenames.
+    # The real id is kept in the file's first line, not its name.
+    return REPO / ".hera" / f"session-{re.sub(r'[^A-Za-z0-9._-]', '_', session_id)}.md"
+
+
+def _claim_path(session_id: str) -> pathlib.Path:
+    return REPO / ".hera" / "claims" / f"{_scratch_for(session_id).stem}.claim"
+
+
+def _claim(session_id: str) -> bool:
+    """Exclusive per-session claim so concurrent workers never ingest the same
+    session twice (SessionEnd of one session + retry sweep of another)."""
+    p = _claim_path(session_id)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if time.time() - p.stat().st_mtime > CLAIM_STALE_S:
+            p.unlink()
+    except OSError:
+        pass
+    try:
+        os.close(os.open(p, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        return True
+    except FileExistsError:
+        return False
+
+
+def _release(session_id: str) -> None:
+    try:
+        _claim_path(session_id).unlink()
+    except OSError:
+        pass
+
+
+def _ensure_embed_ready() -> None:
+    """Best-effort: start the Ollama daemon if it isn't answering. The filing
+    worker runs detached, so a few seconds' wait costs the user nothing; ingest
+    itself re-checks and fails cleanly (session stays pending) if still down."""
+    import embed  # type: ignore
+    try:
+        embed.embed("ready")
+        return
+    except Exception:
+        pass
+    try:
+        sys.path.insert(0, str(REPO / "scripts" / "install"))
+        import ollama_provision  # type: ignore
+        ok, detail = ollama_provision.start_daemon()
+        _log(f"ollama was down; start_daemon -> {ok}: {detail}")
+    except Exception:
+        _log("ollama start failed:\n" + traceback.format_exc())
+
+
+def _distill(tp: pathlib.Path, session_id: str) -> pathlib.Path:
+    """Flatten a transcript (user prompts + assistant text) into
+    .hera/session-<id>.md, which ingest reads and retries re-use."""
+    parts: list[str] = [f"{HEADER}{session_id}",
+                        f"# Ingested at {time.strftime('%Y-%m-%d %H:%M:%S')}"]
+    for line in tp.read_text(encoding="utf-8", errors="replace").splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        try:
+            entry = json.loads(s)
+        except json.JSONDecodeError:
+            continue
+        msg = entry.get("message") if isinstance(entry.get("message"), dict) else {}
+        role = msg.get("role", "")
+        content = msg.get("content")
+        if isinstance(content, str):
+            parts.append(f"[{role}] {content}")
+        elif isinstance(content, list):
+            text_parts = [c.get("text", "") for c in content
+                          if isinstance(c, dict) and c.get("type") == "text"]
+            if text_parts:
+                parts.append(f"[{role}] " + "\n".join(text_parts))
+    scratch = _scratch_for(session_id)
+    scratch.parent.mkdir(parents=True, exist_ok=True)
+    scratch.write_text("\n\n".join(parts), encoding="utf-8")
+    return scratch
+
+
+def _file_scratch(conn, scratch: pathlib.Path, session_id: str) -> int:
+    """Ingest a distilled session under its claim. 0 = filed (or already
+    filed / claimed elsewhere), 1 = failed and left pending for a retry."""
+    import ingest  # type: ignore
+    if not _claim(session_id):
+        _log(f"session {session_id} is being filed by another worker — skipping")
+        return 0
+    try:
+        if _already_filed(conn, session_id):
+            return 0
+        _ensure_embed_ready()
+        r = ingest.ingest_source(str(scratch), source_kind="session")
+        _mark_filed(conn, session_id)
+    except Exception:
+        _log(f"ingest error (session {session_id} left pending for retry):\n"
+             + traceback.format_exc())
+        return 1
+    finally:
+        _release(session_id)
+    _log(f"filed session={session_id} src={r.source.title!r} concepts={len(r.concepts)} entities={len(r.entities)} warnings={len(r.warnings)}")
+    return 0
+
+
 def run_filing(transcript_path: str, session_id: str) -> int:
     """Run the actual filing. Returns 0 on success, non-zero on error."""
     sys.path.insert(0, str(REPO / "scripts"))
     import hera_db  # type: ignore
-    import ingest  # type: ignore
 
     conn = hera_db.ensure_ready()
     if _already_filed(conn, session_id):
@@ -72,51 +182,59 @@ def run_filing(transcript_path: str, session_id: str) -> int:
         _log(f"transcript missing: {tp}")
         return 1
 
-    # Distill the transcript into a source document. We build a plain-text
-    # concatenation of assistant final answers + user prompts and hand it to
-    # the ingest engine as if it were an article. This deterministic pre-
-    # processing keeps behavior predictable when the transcript is large or
-    # contains tool_use noise.
-    parts: list[str] = [f"# Session transcript {session_id}",
-                        f"# Ingested at {time.strftime('%Y-%m-%d %H:%M:%S')}"]
     try:
-        for line in tp.read_text(encoding="utf-8", errors="replace").splitlines():
-            s = line.strip()
-            if not s:
-                continue
-            try:
-                entry = json.loads(s)
-            except json.JSONDecodeError:
-                continue
-            msg = entry.get("message") if isinstance(entry.get("message"), dict) else {}
-            role = msg.get("role", "")
-            content = msg.get("content")
-            if isinstance(content, str):
-                parts.append(f"[{role}] {content}")
-            elif isinstance(content, list):
-                text_parts = [c.get("text", "") for c in content
-                              if isinstance(c, dict) and c.get("type") == "text"]
-                if text_parts:
-                    parts.append(f"[{role}] " + "\n".join(text_parts))
+        scratch = _distill(tp, session_id)
     except Exception:
         _log("transcript flatten error:\n" + traceback.format_exc())
         return 1
+    return _file_scratch(conn, scratch, session_id)
 
-    # Write the distilled transcript to .hera/session-<id>.md so ingest has a real
-    # file to point at (and to preserve as raw source).
-    scratch = REPO / ".hera" / f"session-{session_id}.md"
-    scratch.parent.mkdir(parents=True, exist_ok=True)
-    scratch.write_text("\n\n".join(parts), encoding="utf-8")
 
+def _pending(conn) -> list[tuple[str, pathlib.Path]]:
+    """Distilled sessions with no filed_sessions row, oldest first."""
+    out = []
+    for p in sorted((REPO / ".hera").glob("session-*.md"), key=lambda p: p.stat().st_mtime):
+        try:
+            with p.open(encoding="utf-8", errors="replace") as f:
+                first = f.readline().strip()
+        except OSError:
+            continue
+        if first.startswith(HEADER):
+            sid = first[len(HEADER):].strip()
+            if sid and not _already_filed(conn, sid):
+                out.append((sid, p))
+    return out
+
+
+def retry_pending(limit: int = RETRY_LIMIT) -> int:
+    """File up to ``limit`` sessions whose earlier filing failed (Ollama down,
+    LLM quota hit, …). Returns how many were filed. Codex sessions are
+    re-extracted with the Codex backend, as on their first attempt."""
+    sys.path.insert(0, str(REPO / "scripts"))
+    import hera_db  # type: ignore
+    conn = hera_db.ensure_ready()
+    filed = 0
+    backend = os.environ.get("HERA_LLM_BACKEND")
     try:
-        r = ingest.ingest_source(str(scratch), source_kind="session")
-    except Exception:
-        _log("ingest error:\n" + traceback.format_exc())
-        return 1
-
-    _mark_filed(conn, session_id)
-    _log(f"filed session={session_id} src={r.source.title!r} concepts={len(r.concepts)} entities={len(r.entities)} warnings={len(r.warnings)}")
-    return 0
+        for sid, scratch in _pending(conn):
+            if filed >= limit:
+                break
+            if _claim_path(sid).exists():
+                continue
+            if sid.startswith("codex:"):
+                os.environ["HERA_LLM_BACKEND"] = "codex"
+            elif backend is None:
+                os.environ.pop("HERA_LLM_BACKEND", None)
+            else:
+                os.environ["HERA_LLM_BACKEND"] = backend
+            if _file_scratch(conn, scratch, sid) == 0 and _already_filed(conn, sid):
+                filed += 1
+    finally:
+        if backend is None:
+            os.environ.pop("HERA_LLM_BACKEND", None)
+        else:
+            os.environ["HERA_LLM_BACKEND"] = backend
+    return filed
 
 
 def _read_event() -> dict:
@@ -140,7 +258,9 @@ def main() -> int:
     try:
         # CLI mode: `session_end_file.py <transcript> <session_id>`
         if len(sys.argv) >= 3:
-            return run_filing(sys.argv[1], sys.argv[2])
+            rc = run_filing(sys.argv[1], sys.argv[2])
+            retry_pending()
+            return rc
 
         # Hook mode: read event JSON from stdin.
         evt = _read_event()

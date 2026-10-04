@@ -118,7 +118,9 @@ def _file(transcript: str, session: str) -> None:
     normalized = VAULT / ".hera" / f"codex-{session}.jsonl"
     if _normalize(source, normalized):
         os.environ["HERA_LLM_BACKEND"] = "codex"
-        _module("session_end_file").run_filing(str(normalized), f"codex:{session}")
+        filing = _module("session_end_file")
+        filing.run_filing(str(normalized), f"codex:{session}")
+        filing.retry_pending()
 
 
 def main() -> int:

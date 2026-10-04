@@ -308,6 +308,17 @@ For the ranking used here (RRF over BM25 + dense, `k=60`, floor `0.015`), see
   After a successful ingest, `_mark_filed` does
   `INSERT OR REPLACE INTO filed_sessions(session_id, filed_at) VALUES (?, ?)`.
   Safe to retry, per `session_id`.
+- **Retry of failed filings:** a failed ingest (Ollama down, LLM quota hit)
+  leaves the distilled `.hera/session-<id>.md` in place with no
+  `filed_sessions` row. Every worker run (Claude or Codex) then calls
+  `retry_pending()`, which files up to 3 such sessions, oldest first. The real
+  session id is read from the file's first line (`# Session transcript <id>`);
+  the filename replaces characters such as `:` with `_` so it is valid on
+  Windows. A per-session claim file under `.hera/claims/` (stale after 2 h)
+  stops two workers from ingesting the same session. Before ingesting, the
+  worker tries to start the Ollama daemon if it isn't answering, and
+  `ingest_source` checks the embedder before the LLM call or any page write,
+  so an outage leaves no orphan pages.
 - **Fail-open:** `main()` wraps in `try/except`; errors log
   `"hook error:\n"+traceback` and **return 0**. Inside `run_filing`, missing
   transcript, flatten exception, or ingest exception each log and return 1, but

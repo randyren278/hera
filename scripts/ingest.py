@@ -387,7 +387,7 @@ def _call_claude_extract(raw: str) -> dict:
             f"claude binary not found ({CLAUDE_BIN!r}); set CLAUDE_BIN or put it on PATH"
         ) from e
     if r.returncode != 0:
-        raise RuntimeError(f"claude -p failed: exit {r.returncode}\nstderr:\n{r.stderr}")
+        raise RuntimeError(f"{cmd[0]} extraction failed: exit {r.returncode}\nstderr:\n{r.stderr[-4000:]}")
     out = r.stdout.strip()
     # Be forgiving: strip a stray code fence if the model added one.
     if out.startswith("```"):
@@ -583,6 +583,10 @@ def ingest_source(source_path: str, source_kind: str = "file",
                          f"expected one of {hera_db.TRUST_TIERS}")
     src = pathlib.Path(source_path).resolve()
     raw = _read_text_or_die(src)
+    # Every page this run writes must be indexed, and indexing needs the
+    # embedder. Check it up front so an Ollama outage fails before the LLM
+    # call and before any file lands in wiki/ (no orphan, unindexed pages).
+    _embed.embed("ready")
     if conn is None:
         conn = hera_db.ensure_ready()
 
