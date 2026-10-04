@@ -341,10 +341,16 @@ its hook twice. The concrete failures:
   `filed_sessions`, but wasteful.
 - **UserPromptSubmit:** inject content emitted twice per prompt.
 
-To prevent this, install step 7 renames the project file
+To prevent this, install step 6 renames the project file
 `.claude/settings.json` → `.claude/settings.json.disabled` (and uninstall
 restores it). During global install, hooks run only from the merged
 `~/.claude/settings.json` entries.
+
+The same double-fire happens when two vault checkouts are both installed:
+each registers its own absolute-path hooks. Install step 4 therefore removes
+Hera hook entries that point at any other vault path (in both
+`~/.claude/settings.json` and `~/.codex/hooks.json`), and `--doctor` FAILs if
+another vault's hooks remain.
 
 ```mermaid
 flowchart TD

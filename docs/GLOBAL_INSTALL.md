@@ -235,7 +235,7 @@ Three things worth knowing:
 <vault>/scripts/install/venv.py          # per-OS venv resolve + bootstrap
 <vault>/scripts/install/locator.py       # writes ~/.claude/hera.env
 <vault>/scripts/install/hookcmd.py       # per-OS hook command generation
-<vault>/scripts/install/settings.py      # backup/restore/merge/strip helpers
+<vault>/scripts/install/settings.py      # backup/merge/strip + other-vault cleanup
 <vault>/scripts/install/registration.py  # copy skills + manifest-based uninstall
 <vault>/scripts/install/preflight.py     # OS-neutral env checks (doctor + install)
 <vault>/scripts/hera_cli.py             # OS-neutral engine launcher (skills use it)
