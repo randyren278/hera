@@ -252,6 +252,15 @@ def _doctor_global_conflicts(home_settings: pathlib.Path, state: dict) -> None:
         _fail(f"hooks from another vault also registered in {home_settings}: {others} "
               f"— re-run `python {REPO / 'install.py'}` to make this the only active vault",
               state)
+    codex_hooks = pathlib.Path(os.environ.get("CODEX_HOME", pathlib.Path.home() / ".codex")) / "hooks.json"
+    if codex_hooks.exists():
+        codex_vaults = settings_mod.hera_vaults_in_settings(codex_hooks)
+        stray = [v for v in codex_vaults if settings_mod._norm_vault(v) != here]
+        if stray:
+            _fail(f"Codex hooks ({codex_hooks}) use a different vault: {stray} — Claude and "
+                  f"Codex must share one; re-run `python {REPO / 'install.py'}`", state)
+        elif codex_vaults:
+            _ok(f"Codex hooks use this vault ({codex_hooks})")
     loc = locator.parse_locator(_claude_home() / "hera.env").get("HERA_VAULT")
     if loc and settings_mod._norm_vault(pathlib.Path(loc).expanduser()) != here:
         _fail(f"locator {_claude_home() / 'hera.env'} points at {loc}, not this vault "

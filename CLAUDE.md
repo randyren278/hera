@@ -196,8 +196,8 @@ publish" / "search the team space" → `/hera-team retrieve`.
   bug in your mental model, not the install.
 - `~/.claude/skills/hera-*` and `~/.codex/skills/hera-*` — links to the
   same vault skills on POSIX, recorded in each client's `.hera-manifest`
-- `~/.claude/settings.json.hera-backup.*` — pre-install backups; use
-  `python install.py --uninstall` to restore
+- `~/.claude/settings.json.hera-backup.*` — pre-install backups, kept for
+  manual recovery; `python install.py --uninstall` strips only Hera's hooks
 - `docs/GLOBAL_INSTALL.md` — global-install architecture reference
 - `docs/ARCHITECTURE.md` — system-level map and "where to look when it breaks"
 - `docs/DECISIONS.md` — the ADRs and the "never do this" invariants

@@ -13,6 +13,13 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 import hera_db  # noqa: E402
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _no_real_codex(tmp_path, monkeypatch):
+    """Keep the developer's real ~/.codex out of every doctor test."""
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "no-codex"))
 
 
 def _write_global_settings(home: pathlib.Path, vault: pathlib.Path, events) -> pathlib.Path:
@@ -123,3 +130,39 @@ def test_locator_pointing_elsewhere_fails(tmp_path, monkeypatch, capsys):
     hera_db._doctor_hooks(state)
     out = capsys.readouterr().out
     assert state["fail"] is True and "/somewhere/else" in out
+
+
+def _codex_hooks(codex_home: pathlib.Path, vault: pathlib.Path) -> None:
+    sys.path.insert(0, str(REPO / "scripts" / "install"))
+    import codex
+    import settings as settings_mod
+    codex_home.mkdir(parents=True, exist_ok=True)
+    settings_mod.merge_settings(codex_home / "hooks.json", codex.fragment(vault))
+
+
+def test_codex_on_a_different_vault_fails(tmp_path, monkeypatch, capsys):
+    """Claude and Codex must share one vault."""
+    home, codex_home = tmp_path / "home", tmp_path / "codex"
+    home.mkdir()
+    _add_vault_hooks(home / "settings.json", REPO)
+    _codex_hooks(codex_home, tmp_path / "elsewhere")
+    monkeypatch.setenv("CLAUDE_HOME", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    state = {"fail": False}
+    hera_db._doctor_hooks(state)
+    out = capsys.readouterr().out
+    assert state["fail"] is True and "Codex" in out and "elsewhere" in out
+
+
+def test_codex_on_same_vault_passes(tmp_path, monkeypatch, capsys):
+    home, codex_home = tmp_path / "home", tmp_path / "codex"
+    home.mkdir()
+    _add_vault_hooks(home / "settings.json", REPO)
+    _codex_hooks(codex_home, REPO)
+    monkeypatch.setenv("CLAUDE_HOME", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    state = {"fail": False}
+    hera_db._doctor_hooks(state)
+    out = capsys.readouterr().out
+    assert state["fail"] is False, out
+    assert "Codex" in out

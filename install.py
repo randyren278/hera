@@ -291,7 +291,7 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
         if should:
             home.mkdir(parents=True, exist_ok=True)
             _append_global_claudemd(global_md, vault_md)
-            ui.info(f"appended Hera block to {global_md}")
+            ui.info(f"wrote Hera block in {global_md}")
         else:
             ui.info("(skipped — global CLAUDE.md unchanged)")
 
