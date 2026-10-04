@@ -65,7 +65,8 @@ def _mark_filed(conn, session_id: str) -> None:
 HEADER = "# Session transcript "
 CLAIM_STALE_S = 2 * 3600   # a worker that died mid-ingest frees its claim
 RETRY_LIMIT = 3            # pending sessions retried per worker run
-MAX_ATTEMPTS = 5           # then the session is left for a human (doctor lists it)
+MAX_ATTEMPTS = 5           # permanent failures before the session is left for a human
+MAX_TOTAL_TRIES = 30       # any failures, transient included — no retry forever
 MIN_CONTENT_CHARS = 200    # less conversation than this is not worth an LLM call
 
 
@@ -113,10 +114,26 @@ _TRANSIENT = re.compile(r"usage limit|rate.?limit|overloaded|timed? ?out|timeout
 
 def _is_transient(exc: BaseException) -> bool:
     """Failures that say nothing about the session itself (embedder down, LLM
-    quota or outage) — they never count toward MAX_ATTEMPTS."""
+    quota or outage) — they never count toward MAX_ATTEMPTS. Only the error's
+    own first line and the CLI's ERROR/fatal lines are read: the rest can be
+    echoed transcript or model text that merely mentions "timeout"."""
     import embed  # type: ignore
-    return isinstance(exc, (embed.EmbedError, TimeoutError, ConnectionError)) \
-        or bool(_TRANSIENT.search(str(exc)))
+    if isinstance(exc, (embed.EmbedError, TimeoutError, ConnectionError)):
+        return True
+    lines = str(exc).splitlines() or [""]
+    probe = [lines[0]] + [l for l in lines[1:] if re.match(r"\s*(error|fatal)\b", l, re.I)]
+    return any(_TRANSIENT.search(l) for l in probe)
+
+
+def _tries_path(session_id: str) -> pathlib.Path:
+    return _claim_path(session_id).with_suffix(".tries")
+
+
+def _tries(session_id: str) -> int:
+    try:
+        return int(_tries_path(session_id).read_text() or 0)
+    except (OSError, ValueError):
+        return 0
 
 
 def _release(session_id: str) -> None:
@@ -207,6 +224,7 @@ def _file_scratch(conn, scratch: pathlib.Path, session_id: str) -> int:
         try:
             if n:
                 _attempts_path(session_id).write_text(str(n))
+            _tries_path(session_id).write_text(str(_tries(session_id) + 1))
         except OSError:
             pass
         tb = traceback.format_exc()
@@ -297,7 +315,8 @@ def retry_pending(limit: int = RETRY_LIMIT) -> int:
         for sid, scratch in _pending(conn, prune=True):
             if filed >= limit:
                 break
-            if _claim_path(sid).exists() or _attempts(sid) >= MAX_ATTEMPTS:
+            if (_claim_path(sid).exists() or _attempts(sid) >= MAX_ATTEMPTS
+                    or _tries(sid) >= MAX_TOTAL_TRIES):
                 continue
             if sid.startswith("codex:"):
                 os.environ["HERA_LLM_BACKEND"] = "codex"

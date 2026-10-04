@@ -192,3 +192,19 @@ def test_llm_judgements_run_before_any_write(vault):
     mp.setattr(ingest, "_detect_contradiction", judge)
     ingest.ingest_source(str(_write_source_file(root, "later.txt")), conn=conn)
     assert seen == {"source_written": False, "in_txn": False}
+
+
+def test_same_basename_different_sources_never_share_a_page(vault):
+    """Council round 3 (R3-2): raw copies were keyed on the basename, so a/n.md
+    and b/n.md (titled alike by the LLM) looked like one re-ingested source."""
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    (root / "a").mkdir()
+    (root / "b").mkdir()
+    (root / "a" / "n.md").write_text("AAA first source")
+    (root / "b" / "n.md").write_text("BBB second source")
+    ingest.ingest_source(str(root / "a" / "n.md"), conn=conn)
+    ingest.ingest_source(str(root / "b" / "n.md"), conn=conn)
+    assert conn.execute("SELECT count(*) FROM pages WHERE type='source'").fetchone()[0] == 2
+    raws = sorted(p.read_text() for p in (root / "wiki" / ".raw" / "articles").glob("n*.md"))
+    assert raws == ["AAA first source", "BBB second source"]

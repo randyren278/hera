@@ -487,11 +487,12 @@ def doctor(verbose: bool = False) -> int:
         sys.path.insert(0, str(REPO / ".claude" / "hooks"))
         import session_end_file as sef
         pending = sef._pending(conn)
-        stuck = [sid for sid, _ in pending if sef._attempts(sid) >= sef.MAX_ATTEMPTS]
+        stuck = [sid for sid, _ in pending if sef._attempts(sid) >= sef.MAX_ATTEMPTS
+                 or sef._tries(sid) >= sef.MAX_TOTAL_TRIES]
         if stuck:
-            _warn(f"sessions that failed to file {sef.MAX_ATTEMPTS}× ({len(stuck)}), no longer "
-                  f"retried: {', '.join(stuck[:3])} — see .hera/filing.log; delete "
-                  f".hera/claims/*.attempts to retry")
+            _warn(f"sessions that kept failing to file ({len(stuck)}), no longer retried: "
+                  f"{', '.join(stuck[:3])} — see .hera/filing.log; delete "
+                  f".hera/claims/*.attempts and *.tries to retry")
         if len(pending) > len(stuck):
             _warn(f"unfiled sessions ({len(pending) - len(stuck)}) — retried automatically "
                   "at the next session end; see .hera/filing.log")

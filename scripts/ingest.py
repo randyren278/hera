@@ -32,6 +32,7 @@ DB rows consistent, hot/index/log updated), not exact strings.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
@@ -601,7 +602,11 @@ def ingest_source(source_path: str, source_kind: str = "file",
     # Preserve raw text
     raw_dir = raw_dir or (WIKI / ".raw" / "articles")
     raw_dir.mkdir(parents=True, exist_ok=True)
-    kept = raw_dir / src.name
+    # Name the raw copy by content: two different sources sharing a basename
+    # (a/n.md, b/n.md) must not overwrite each other or look like one source.
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]
+    kept = raw_dir / (src.name if src.parent.resolve() == raw_dir.resolve()
+                      else f"{src.stem}-{digest}{src.suffix}")
     if src.resolve() != kept.resolve():
         shutil.copy2(src, kept)
 

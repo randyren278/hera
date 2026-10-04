@@ -193,3 +193,24 @@ def test_transient_failures_do_not_use_up_attempts(filing):
     assert sef._is_transient(RuntimeError("codex extraction failed: exit 1\nERROR: "
                                           "You've hit your usage limit."))
     assert not sef._is_transient(ValueError("extraction returned invalid JSON"))
+
+
+def test_transient_check_ignores_echoed_transcript_text(filing):
+    """Council round 3 (R3-1): words like 'timeout' inside echoed model output
+    or prompt text must not make a permanent failure look transient."""
+    sef, *_ = filing
+    assert not sef._is_transient(RuntimeError(
+        "claude did not return JSON:\nthe hook timeout is 10s so ..."))
+    assert not sef._is_transient(RuntimeError(
+        "extraction failed: exit 1\nstderr:\nuser: discuss rate limit and timeout"))
+    assert sef._is_transient(RuntimeError(
+        "codex extraction failed: exit 1\nstderr:\nERROR: You've hit your usage limit."))
+
+
+def test_total_tries_are_capped_even_when_transient(filing, monkeypatch):
+    sef, tmp, calls, state, db = filing  # EmbedError: transient every time
+    monkeypatch.setattr(sef, "MAX_TOTAL_TRIES", 4)
+    sef.run_filing(str(_transcript(tmp, "t")), "sess-t")
+    for _ in range(10):
+        sef.retry_pending()
+    assert len(calls) == 4
