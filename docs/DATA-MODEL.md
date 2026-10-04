@@ -473,7 +473,7 @@ The function is callable but not wired as a command there.
 
 `team.db` is a **separate SQLite file** that indexes teammates' published
 pages for hybrid retrieval. It is not part of `hera.db` and never mingles with
-it — the isolation is the whole point (see [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-14)).
+it — the isolation is the whole point (see [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-15)).
 
 **Location & override.** `scripts/team_index.py` sets
 `TEAM_DB = os.environ.get("HERA_TEAM_DB", REPO / "team.db")`. It is opened with
