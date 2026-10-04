@@ -6,7 +6,6 @@ import os
 import pathlib
 import sys
 
-import pytest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
