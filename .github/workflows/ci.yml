@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: pytest (${{ matrix.os }}${{ matrix.ollama && ', with Ollama' || '' }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Full suite: the retrieval/trust tests need real embeddings.
+          - os: ubuntu-latest
+            ollama: true
+          # Installer/hook paths on macOS; embedding tests skip with a reason.
+          - os: macos-latest
+            ollama: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Bootstrap .venv exactly the way install.py does, so CI also proves the
+      # interpreter selection + pip reconcile path a fresh clone goes through.
+      - name: Bootstrap .venv via the installer
+        run: |
+          python -c "import pathlib,sys; sys.path.insert(0,'scripts/install'); import venv; print(venv.ensure_venv(pathlib.Path('.').resolve()))"
+
+      - name: Install Ollama + nomic-embed-text
+        if: matrix.ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          for i in $(seq 1 30); do curl -sf http://localhost:11434/api/version && break; sleep 1; done
+          ollama pull nomic-embed-text
+
+      - name: pytest
+        env:
+          HERA_REQUIRE_OLLAMA: ${{ matrix.ollama && '1' || '0' }}
+        run: .venv/bin/python -m pytest -q -ra
+
+      - name: Docs consistency
+        run: |
+          bash scripts/check_doc_links.sh
+          bash scripts/check_docs_consistency.sh

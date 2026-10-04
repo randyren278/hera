@@ -13,6 +13,10 @@ Everything here lives and dies in a temp directory.
 """
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.needs_ollama  # real embeddings; see conftest.py
+
 import json
 import os
 import pathlib

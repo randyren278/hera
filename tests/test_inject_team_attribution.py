@@ -11,6 +11,10 @@ Builds a scratch team.db in the shape team_index.py produces (canonical schema
 """
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.needs_ollama  # real embeddings; see conftest.py
+
 import json
 import os
 import pathlib

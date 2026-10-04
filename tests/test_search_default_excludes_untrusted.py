@@ -13,6 +13,10 @@ ONLY page in the vault must yield zero hits, not "the best of a bad lot".
 """
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.needs_ollama  # real embeddings; see conftest.py
+
 import pathlib
 import sys
 import tempfile

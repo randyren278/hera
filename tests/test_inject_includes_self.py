@@ -9,6 +9,10 @@ must come back, as a resolvable absolute path, with no attribution prefix
 """
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.needs_ollama  # real embeddings; see conftest.py
+
 import json
 import os
 import pathlib

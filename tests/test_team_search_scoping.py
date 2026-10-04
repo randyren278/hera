@@ -18,17 +18,7 @@ PY = sys.executable
 UNIQ = "zzquantumfoo"
 
 
-def _embed_up() -> bool:
-    sys.path.insert(0, str(REPO / "scripts"))
-    try:
-        import embed
-        embed.embed("probe")
-        return True
-    except Exception:
-        return False
-
-
-pytestmark = pytest.mark.skipif(not _embed_up(), reason="embedding endpoint (Ollama) down")
+pytestmark = pytest.mark.needs_ollama
 
 
 def _page(path: pathlib.Path, pid: str, owner: str, title: str, body: str) -> None:

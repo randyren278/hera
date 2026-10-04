@@ -13,6 +13,10 @@ What this proves, against a real scratch vault with real embeddings:
 """
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.needs_ollama  # real embeddings; see conftest.py
+
 import pathlib
 import sys
 import tempfile
