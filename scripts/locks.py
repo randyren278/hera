@@ -4,7 +4,8 @@ Contract: every vault write goes through `with lock(path): ...`. On lock
 contention after N retries the caller writes a delta file to
 wiki/.pending/<page_id>.<ulid>.delta.md instead — the write never blocks
 indefinitely. On the next successful lock acquisition for the same page,
-outstanding deltas are merged first.
+outstanding deltas are merged right after the holder's write (so a full rewrite
+cannot erase them). Stale locks are broken by atomic rename, never check-then-delete.
 
 Design notes:
   - lockfile format: single line "<pid> <iso_timestamp>", atomic O_EXCL create
@@ -133,9 +134,31 @@ def _try_create(lock_path: pathlib.Path) -> bool:
     return True
 
 
-def _break_stale(lock_path: pathlib.Path) -> None:
+def _read_lock(lock_path: pathlib.Path) -> str | None:
     try:
-        lock_path.unlink()
+        return lock_path.read_text()
+    except OSError:
+        return None
+
+
+def _break_stale(lock_path: pathlib.Path, expected: str | None = None) -> None:
+    """Break a stale lock without a check-then-delete race.
+
+    The lock is first renamed aside (atomic). If ``expected`` — the content
+    seen when it was judged stale — no longer matches, another writer broke it
+    and took a fresh lock in between; that live lock is put back."""
+    tomb = lock_path.with_name(f"{lock_path.name}.stale.{os.getpid()}.{ulid.new()}")
+    try:
+        os.rename(lock_path, tomb)
+    except FileNotFoundError:
+        return
+    if expected is not None and _read_lock(tomb) != expected:
+        try:
+            os.link(tomb, lock_path)  # fails if yet another lock exists: fine
+        except OSError:
+            pass
+    try:
+        tomb.unlink()
     except FileNotFoundError:
         pass
 
@@ -161,14 +184,16 @@ def lock(target: pathlib.Path,
 
     for attempt in range(retries + 1):
         # Break stale first, then try to create.
+        seen = _read_lock(lp)
         if _is_stale(lp, now):
-            _break_stale(lp)
+            _break_stale(lp, seen)
         if _try_create(lp):
-            # Before yielding, merge any pending deltas for this page.
-            if page_id and conn is not None:
-                _merge_deltas(conn, page_id, target)
             try:
                 yield LockAcquired(path=target, lock_path=lp)
+                # Merge pending deltas AFTER the caller's write: merging first
+                # let a full-file rewrite erase them while marking them merged.
+                if page_id and conn is not None:
+                    _merge_deltas(conn, page_id, target)
             finally:
                 try:
                     lp.unlink()
@@ -284,7 +309,8 @@ def sweep_stale_locks(root: pathlib.Path) -> int:
     now = time.time()
     broken = 0
     for lp in root.rglob(".*.lock"):
+        seen = _read_lock(lp)
         if _is_stale(lp, now):
-            _break_stale(lp)
+            _break_stale(lp, seen)
             broken += 1
     return broken

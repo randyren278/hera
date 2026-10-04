@@ -117,3 +117,33 @@ def test_sweep_stale_locks(env):
     broken = locks.sweep_stale_locks(env["wiki"])
     assert broken == 1
     assert not lp.exists()
+
+
+def test_delta_survives_a_full_rewrite_under_the_lock(env):
+    """Regression: deltas were merged BEFORE yielding, so a caller that rewrites
+    the whole file (ingest's _write_page_file) erased them while they were
+    stamped merged."""
+    lp = env["target"].parent / ".foo.md.lock"
+    lp.write_text(f"{os.getpid()} {time.strftime('%Y-%m-%dT%H:%M:%S')}\n")
+    with locks.lock(env["target"], retries=0, page_id="01PAGE", conn=env["db"],
+                    intent="append", delta_body="queued-while-locked"):
+        pass
+    lp.unlink()
+    with locks.lock(env["target"], page_id="01PAGE", conn=env["db"]):
+        env["target"].write_text("# Foo rewritten\n")
+    body = env["target"].read_text()
+    assert body.startswith("# Foo rewritten") and "queued-while-locked" in body
+
+
+def test_stale_break_never_removes_a_lock_that_was_just_retaken(env, monkeypatch):
+    """TOCTOU: between judging a lock stale and breaking it, another writer can
+    break it too and take a fresh one. The break must not delete that fresh lock."""
+    lp = env["target"].parent / ".foo.md.lock"
+    lp.write_text(f"999999 {time.strftime('%Y-%m-%dT%H:%M:%S')}\n")  # dead pid → stale
+    seen = lp.read_text()
+    # Another process wins the race: breaks the stale lock and holds a live one.
+    lp.unlink()
+    live = f"{os.getpid()} {time.strftime('%Y-%m-%dT%H:%M:%S')} other-writer\n"
+    lp.write_text(live)
+    locks._break_stale(lp, seen)
+    assert lp.exists() and lp.read_text() == live
