@@ -231,7 +231,7 @@ from any (foreign) working directory. The locator file is written by
     `try/except`, then merges those owner-tagged team hits with the local hits by
     the same RRF score (one scale) before taking `top_n`. Team pointers are
     tagged ` (team: <owner>)`. Team pages are indexed only in `team.db` and never
-    enter `hera.db` (isolation invariant — [ADR-14](DECISIONS.md#2-adr-log-01-15) / rule #9 in [CLAUDE.md](../CLAUDE.md) "What NEVER to do"); the nested
+    enter `hera.db` (isolation invariant — [ADR-14](DECISIONS.md#2-adr-log-01-16) / rule #9 in [CLAUDE.md](../CLAUDE.md) "What NEVER to do"); the nested
     try/except means a missing `team.db` or a down embedder degrades to
     local-only and never breaks injection. See [RETRIEVAL.md § local ↔ team](RETRIEVAL.md#4-how-data-flows-local-team)
     and [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team space-index).

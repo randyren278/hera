@@ -147,7 +147,7 @@ sequenceDiagram
 - `page_meta` (owner/source/rel_path/mtime) is created only in `team.db`, never in `hera_db.SCHEMA`, so team-only columns stay out of the personal DB.
 - Retrieval fuses the two DBs at *query time* by score. Fusion reads both; it merges neither store into the other.
 
-Why it matters: if team pages leaked into `hera.db`, they would earn citations, count toward prune, and collide with your own conflicts — mixing other people's notes into your local ranking. Keeping the stores separate is what lets team retrieval surface everyone's pages while your personal ranking stays entirely yours. See [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-15) and [CLAUDE.md § What NEVER to do #9](../CLAUDE.md).
+Why it matters: if team pages leaked into `hera.db`, they would earn citations, count toward prune, and collide with your own conflicts — mixing other people's notes into your local ranking. Keeping the stores separate is what lets team retrieval surface everyone's pages while your personal ranking stays entirely yours. See [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-16) and [CLAUDE.md § What NEVER to do #9](../CLAUDE.md).
 
 ---
 
@@ -157,5 +157,5 @@ Why it matters: if team pages leaked into `hera.db`, they would earn citations, 
 - The team sync/index/search engines in depth: [PIPELINES.md § team space retrieval](PIPELINES.md#6-team space-retrieval-scriptsteam_indexpy-scriptsteam_searchpy)
 - The stores and the `team.db` schema: [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team space-index)
 - The hooks that call search at session time: [HOOKS.md](HOOKS.md)
-- The decision behind the two-DB split: [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-15)
+- The decision behind the two-DB split: [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-16)
 - Up: [docs index](README.md)

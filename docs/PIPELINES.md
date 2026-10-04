@@ -244,7 +244,7 @@ flowchart TD
 
 **Search (`team_search.py`).** `search.team_hybrid_search(team_conn, query, owner=None)` runs the same `_rrf_fuse` BM25+dense fusion over `team.db`, joining `page_meta` to attach `owner`/`source`, and returns dicts (team hits carry `owner`, which the local `Hit` does not). `team_search.py` merges that with the local `hybrid_search` by fused RRF score (same scale) and tags each hit's owner. `--owner NAME` restricts to that teammate and excludes your personal vault. The per-turn hook (`prompt_inject.py`) does the same fusion and tags team pointers ` (team: <owner>)`; the team query sits in its own try/except so a missing `team.db` or a down embedder contributes nothing and never breaks injection (fail-open).
 
-**Isolation invariant.** `team_index.py` opens only `TEAM_DB`; no team page, ULID row, or citation ever enters your personal `hera.db`. That separation is what lets team retrieval surface *everyone's* published pages without polluting your local ranking. See [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team space-index) and [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-15).
+**Isolation invariant.** `team_index.py` opens only `TEAM_DB`; no team page, ULID row, or citation ever enters your personal `hera.db`. That separation is what lets team retrieval surface *everyone's* published pages without polluting your local ranking. See [DATA-MODEL.md § team.db](DATA-MODEL.md#8-teamdb-the-team space-index) and [DECISIONS.md ADR-14](DECISIONS.md#2-adr-log-01-16).
 
 ---
 

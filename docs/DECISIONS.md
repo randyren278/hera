@@ -44,7 +44,7 @@ Co-locating the rule with its enforcement lets a maintainer grep from either dir
 
 ---
 
-## 2. ADR log (01-15)
+## 2. ADR log (01-16)
 
 One decision per row, stated as the decision (not the problem). The key decisions are expanded below the table (Context / Decision / Consequences). **Reference an ADR from prose by ID only** (e.g. "freeze-on-ingest (ADR-09)"); never paraphrase a decision in two places or the two copies will drift.
 
@@ -62,6 +62,7 @@ One decision per row, stated as the decision (not the problem). The key decision
 | ADR-10 | Conflict resolution surfacing | Origin-scoped, deferred-interactive; **four channels**; relevance-triggered (channel 3) is deliberately unscoped. | Accepted |
 | ADR-11 | Session work vs. external sources | Explicit session statements auto-win (auto-resolve as `resolved_new`); implications and external contradictions queue. | Accepted |
 | ADR-13 | Team space staging hygiene | Owner folder is named from `HERA_OWNER` (set per machine in `hera.env`; no default — team writes refuse without it), never the git author name; the staging clone ships a committed `.gitignore` so `git add -A` can't sweep OS junk into a publish. | Accepted |
+| ADR-16 | Session pages are `self` tier | Filed sessions keep trust `self`: their distilled text excludes all tool output, and injection is pointer-only. Revisit if sessions ever ingest tool results. | Accepted |
 | ADR-15 | Embedding scheme + relevance gate | Vectors use nomic task prefixes and unit length (L2 KNN ≡ cosine); injection keeps a hit only if its cosine ≥ `inject_min_cosine` (0.65). The RRF floor no longer gates relevance. | Accepted |
 | ADR-14 | Team space retrieval | Team pages get the **same hybrid retrieval as local** (BM25 + dense + RRF), indexed by publisher ULID in a **separate `team.db`** (never `hera.db`), refreshed on sync and fused owner-tagged into injection. | Accepted |
 
@@ -152,6 +153,16 @@ The **shape** is above; the **values** live in code and belong in prose, not a n
 
 - `score(item) = Σ 1/(RRF_K + rank_i)`, summed over each substrate that ranked the page, with `RRF_K = 60` (module constant `RRF_K` in `scripts/search.py`). Ranks are 1-based positional, **not** the raw `bm25()`/distance values.
 - The RRF floor is **`0.015`** (`hybrid_search(..., floor=0.015)`, also seeded as `config.inject_relevance_floor`). It is **not** a relevance gate: any page ranked 1–6 by a single retriever scores ≥ 1/66 ≈ 0.0152 and clears it. Relevance for injection is gated by cosine (ADR-15).
+
+#### ADR-16: Session pages are `self` tier
+
+**Context.** Trust tiers (§5.1) keep `untrusted` pages out of injection. The 2026-10-03 audit asked whether filed sessions should be `untrusted`, since a session may have read web pages or email and the assistant's answers can paraphrase them.
+
+**Decision.** Session pages stay `self`. Marking them `untrusted` would switch off the main source of recall (every filed session would become invisible to injection) to defend against a narrow path, which the distillers already bound:
+- `session_end_file._distill` keeps only `text` blocks of user and assistant messages; `tool_result` blocks — where fetched pages, email bodies and command output live — never reach ingest. `codex_hook._normalize` likewise keeps only user prompts and final assistant messages.
+- Injection is pointer-only: a title and at most 160 characters of a page's first line, framed as pointers, never page bodies.
+
+**Consequences.** Text an assistant chose to repeat from an untrusted source can be filed as `self`. Anything that starts feeding tool output into session filing must revisit this decision and file such pages `untrusted` (`ingest_source(..., trust="untrusted")`).
 
 #### ADR-15: Embedding scheme and cosine relevance gate
 
