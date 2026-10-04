@@ -40,7 +40,10 @@ from the vault directory you cloned; `python install.py` creates the locator.
    creates `hera.db` with the §5 schema and default config keys.
 
 4. **Ollama + model.** Verify Ollama is running (`ollama serve` in background)
-   and pull `nomic-embed-text` if missing.
+   and pull `nomic-embed-text` if missing. If Ollama is not installed, **ask the
+   user** before re-running `python "<VAULT>/install.py" --install-ollama`: it
+   runs Ollama's official installer, which may prompt for sudo. Run without a
+   terminal, `install.py` never installs Ollama on its own.
 
 5. **Hooks — verify, never hand-edit.** `python "<VAULT>/install.py"` is the
    only thing that wires hooks: it writes absolute-path entries into the global

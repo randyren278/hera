@@ -182,7 +182,10 @@ def do_install(dry: bool, with_global_md: bool, ollama_yes: bool | None = None) 
 
         def _prompt_install_ollama() -> bool:
             if not sys.stdin.isatty():
-                return True  # non-TTY (e.g. run via Claude) → proceed
+                # Non-TTY (Claude running /hera-setup, CI, a script): never run
+                # a remote installer (which may sudo) without consent. Opt in
+                # with --install-ollama; preflight then just warns.
+                return False
             try:
                 reply = input("Ollama not found — install it now? [Y/n] ").strip().lower()
             except EOFError:
