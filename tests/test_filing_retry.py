@@ -19,6 +19,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 sys.path.insert(0, str(REPO / ".claude" / "hooks"))
 import embed  # noqa: E402
 import hera_db  # noqa: E402
+import locks  # noqa: E402
 
 
 @pytest.fixture
@@ -74,6 +75,18 @@ def test_failed_session_is_retried_later(filing):
     assert sef.retry_pending() == 1
     assert _filed(db) == {"sess-a", "sess-b"}
     assert sef.retry_pending() == 0  # nothing left; filed sessions never re-ingest
+
+
+def test_lock_contention_stays_pending_without_counting_as_a_permanent_failure(filing):
+    sef, tmp, calls, state, db = filing
+    state["exc"] = locks.LockError("could not acquire lock: page.md.lock")
+    assert sef.run_filing(str(_transcript(tmp, "locked")), "sess-locked") == 1
+    assert _filed(db) == set()
+    assert sef._attempts("sess-locked") == 0
+    assert [sid for sid, _ in sef._pending(_init(db))] == ["sess-locked"]
+    state["fail"] = False
+    assert sef.retry_pending() == 1
+    assert _filed(db) == {"sess-locked"}
 
 
 def test_scratch_name_is_portable_but_id_is_preserved(filing):

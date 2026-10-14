@@ -388,13 +388,15 @@ approximately 0.8 s, 1.6 s, 3.2 s (sum ≈ 5.6 s).
 
 ```mermaid
 flowchart TD
-  A([write request]) --> B{lock stale?}
+  A([write request]) --> V{delta intent supported or overflow disabled?}
+  V -->|no| X[raise ValueError]
+  V -->|yes| B{lock stale?}
   B -->|yes| C[delete stale lock]
   B -->|no| D
   C --> D[try atomic create]
   D --> E{acquired?}
-  E -->|yes| F[merge pending deltas for this page]
-  F --> G[yield lock, caller writes, unlink on exit]
+  E -->|yes| F[yield lock, caller writes]
+  F --> G[merge supported pending deltas, unlink on exit]
   E -->|no| H{attempts left?}
   H -->|yes| I[sleep backoff, retry]
   I --> D
@@ -403,14 +405,17 @@ flowchart TD
   J -->|yes| L[write .pending delta, yield None]
 ```
 
-Two things happen only when a lock is acquired: pending deltas for that
-page are drained **before** the caller writes (so the caller sees a
-merged file), and the lock file is unlinked in a `finally` on exit. If all
+Two things happen only when a lock is acquired: supported pending deltas for
+that page are applied **after** the caller writes (so a full rewrite cannot
+erase them), and the lock file is unlinked in a `finally` on exit. If all
 retries are exhausted and `allow_delta` is set (with `page_id`,
 `delta_body`, and `conn` all supplied), the writer overflows to a delta
 and `lock()` yields `None` to signal "wrote a delta instead". Otherwise it
-raises `LockError`. Meta-page writers (`hot.md`, `index.md`, `log.md`) use
-`allow_delta=False`: they must win the lock or fail.
+raises `LockError`. Full-page ingest and meta-page writers (`hot.md`,
+`index.md`, `log.md`) use `allow_delta=False`: they must win the lock or fail.
+Ingest journals a page only after acquiring its lock, so rollback does not
+restore a contended page it never wrote. Session filing treats lock contention
+as transient and leaves the session pending for retry.
 
 ### Delta file format
 
@@ -421,7 +426,7 @@ raises `LockError`. Meta-page writers (`hot.md`, `index.md`, `log.md`) use
 ---
 page_id: <id>
 target: <posix path>
-intent: <intent>
+intent: append
 created: <iso>
 ---
 <body>
@@ -436,32 +441,24 @@ named `wiki` and returns `wiki/.pending`, falling back to
 
 ```mermaid
 stateDiagram-v2
-  [*] --> written : lock contention, allow_delta
-  written --> merged_append : next lock acquire, intent=append
-  written --> merged_marker : next lock acquire, intent!=append
-  written --> merged_missing : delta file gone
-  merged_append --> [*]
-  merged_marker --> [*]
-  merged_missing --> [*]
+  [*] --> pending : lock contention, allow_delta, intent=append
+  pending --> merged : next holder finishes writing, append applied
+  pending --> pending : missing file or legacy unsupported intent
+  merged --> [*]
 ```
 
-On the next successful lock acquire for the page, `_merge_deltas` selects
+After the next successful lock holder writes the page, `_merge_deltas` selects
 unmerged rows `ORDER BY created_at` and processes each:
 
-- **file gone** → row marked `merged_at` (avoid spinning), nothing written.
+- **file gone** → row remains pending for recovery, nothing written.
 - **`intent == "append"`** → body appended to the target
   (`"\n" + body.rstrip() + "\n"`), row marked `merged_at`.
-- **any other intent** → only an HTML marker comment
-  `<!-- unmerged intent=... see <file> -->` is appended, then the row is
-  still marked `merged_at`.
+- **any other intent** → file and row remain pending, target unchanged.
 
-> [!warning] `replace_section` and `frontmatter_patch` are declared as
-> valid intents but are **not implemented**. A non-append delta is
-> effectively dropped except for the marker comment, and its row is marked
-> merged anyway. This is flagged "TODO: deliberately noisy" in the source.
-> In practice ingest only ever writes `intent="append"`, so this path is
-> latent, not hit. A maintainer adding a non-append writer must
-> implement the merge branch first.
+New delta requests support only `append`. With `allow_delta=True`, any other
+intent raises `ValueError` before acquiring a lock or creating a delta.
+Existing unsupported deltas remain visible to `--doctor` rather than being
+reported as merged. `_merge_deltas` returns only the number actually applied.
 
 **Sweeping.** `sweep_stale_locks(root)` globs `root.rglob(".*.lock")` and
 breaks any stale lock, returning the count. `--doctor` suggests a
@@ -525,8 +522,8 @@ These are intentionally out of scope for `hera_db.py` / `locks.py` /
 - `pages_fts_map`: created by `ingest.py` / `search.py`, not `hera_db.py`.
 - ULID assignment for pages: done in `ingest.py`.
 - `locks.py --sweep` CLI: function exists, no `__main__` block.
-- Non-append delta merge (`replace_section`, `frontmatter_patch`): declared,
-  not implemented.
+- Non-append delta merge (`replace_section`, `frontmatter_patch`): unsupported;
+  new requests are rejected and legacy pending deltas are retained.
 - Non-`pinned` schema migrations: none. `schema_version` reaches **2**
   (`pages.pinned`, §2.8); nothing beyond that exists in code.
 

@@ -451,8 +451,6 @@ def _index_page_search(conn, pw: PageWrite):
         conn.execute("INSERT INTO pages_fts_map(rowid, page_id) VALUES (?, ?)",
                      (rowid, pw.id))
 
-    # Embedding: title + first ~500 chars of body — enough signal for retrieval
-    # without embedding an entire book of text.
     payload = f"{pw.title}\n{pw.body_md[:2000]}"
     vec = _embed.embed_document(payload)
     conn.execute("DELETE FROM pages_vec WHERE page_id = ?", (pw.id,))
@@ -460,18 +458,16 @@ def _index_page_search(conn, pw: PageWrite):
                  (pw.id, _embed.pack(vec)))
 
 
-def _write_page_file(conn, pw: PageWrite, extra_fm: dict | None = None):
+def _write_page_file(conn, pw: PageWrite, extra_fm: dict | None = None,
+                     journal: dict[pathlib.Path, str | None] | None = None):
     # Every page carries its tier on disk, not just in the DB — a reindex from
     # the markdown must not silently promote an untrusted page to 'self'.
     extra_fm = {**(extra_fm or {}), "trust": pw.trust}
     pw.path.parent.mkdir(parents=True, exist_ok=True)
-    with locks.lock(pw.path, page_id=pw.id, conn=conn,
-                    intent="append", delta_body="") as acq:
-        if acq is None:
-            # Under contention — writing a page for the first time makes no
-            # sense to delta-append. In practice ingest runs single-threaded
-            # so this branch is defensive only.
-            return
+    with locks.lock(pw.path, page_id=pw.id, conn=conn, allow_delta=False):
+        if journal is not None and pw.path not in journal:
+            journal[pw.path] = (pw.path.read_text(encoding="utf-8")
+                                if pw.path.exists() else None)
         fm = _frontmatter(pw.id, pw.title, pw.type, extra=extra_fm, aliases=pw.aliases)
         pw.path.write_text(fm + pw.body_md.rstrip() + "\n", encoding="utf-8")
 
@@ -675,10 +671,7 @@ def ingest_source(source_path: str, source_kind: str = "file",
             verdicts[id(pw)] = (v, explicit)
 
     def write(pw: PageWrite, **kw) -> None:
-        if pw.path not in journal:
-            journal[pw.path] = (pw.path.read_text(encoding="utf-8")
-                                if pw.path.exists() else None)
-        _write_page_file(conn, pw, **kw)
+        _write_page_file(conn, pw, journal=journal, **kw)
 
     try:
         write(src_page, extra_fm=src_extra)

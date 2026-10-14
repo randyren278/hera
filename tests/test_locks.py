@@ -147,3 +147,62 @@ def test_stale_break_never_removes_a_lock_that_was_just_retaken(env, monkeypatch
     lp.write_text(live)
     locks._break_stale(lp, seen)
     assert lp.exists() and lp.read_text() == live
+
+
+@pytest.mark.parametrize("intent", ["replace_section", "frontmatter_patch", "unknown"])
+def test_unsupported_delta_intent_is_rejected_before_locking(env, intent):
+    with pytest.raises(ValueError, match="unsupported delta intent"):
+        with locks.lock(env["target"], retries=0, page_id="01PAGE",
+                        conn=env["db"], intent=intent, delta_body="replacement"):
+            pytest.fail("unsupported intent was admitted")
+    assert env["target"].read_text() == "# Foo\n"
+    assert not locks._lock_path_for(env["target"]).exists()
+    assert env["db"].execute("SELECT count(*) FROM pending_deltas").fetchone()[0] == 0
+    assert list((env["wiki"] / ".pending").iterdir()) == []
+
+
+@pytest.mark.parametrize("intent", ["replace_section", "frontmatter_patch", "unknown"])
+def test_existing_unsupported_delta_stays_pending_without_changing_page(env, intent):
+    delta = env["wiki"] / ".pending" / "legacy.delta.md"
+    delta.write_text(f"---\nintent: {intent}\n---\nimportant unapplied content\n")
+    env["db"].execute(
+        "INSERT INTO pending_deltas(page_id, delta_path, created_at) VALUES (?, ?, ?)",
+        ("01PAGE", str(delta), "2026-01-01T00:00:00"),
+    )
+    env["db"].commit()
+    original_delta = delta.read_text()
+    for _ in range(2):
+        with locks.lock(env["target"], page_id="01PAGE", conn=env["db"]):
+            pass
+        assert env["target"].read_text() == "# Foo\n"
+        assert env["db"].execute("SELECT merged_at FROM pending_deltas").fetchone()[0] is None
+        assert delta.read_text() == original_delta
+
+
+def test_missing_delta_is_not_reported_as_merged(env):
+    missing = env["wiki"] / ".pending" / "missing.delta.md"
+    env["db"].execute(
+        "INSERT INTO pending_deltas(page_id, delta_path, created_at) VALUES (?, ?, ?)",
+        ("01PAGE", str(missing), "2026-01-01T00:00:00"),
+    )
+    env["db"].commit()
+    with locks.lock(env["target"], page_id="01PAGE", conn=env["db"]):
+        pass
+    assert env["db"].execute("SELECT merged_at FROM pending_deltas").fetchone()[0] is None
+    assert env["target"].read_text() == "# Foo\n"
+
+
+def test_merge_count_includes_only_applied_deltas(env):
+    pending = env["wiki"] / ".pending"
+    for name, intent in [("append", "append"), ("unsupported", "replace_section")]:
+        delta = pending / f"{name}.delta.md"
+        delta.write_text(f"---\nintent: {intent}\n---\n{name} content\n")
+        env["db"].execute(
+            "INSERT INTO pending_deltas(page_id, delta_path, created_at) VALUES (?, ?, ?)",
+            ("01PAGE", str(delta), "2026-01-01T00:00:00"),
+        )
+    env["db"].commit()
+    assert locks._merge_deltas(env["db"], "01PAGE", env["target"]) == 1
+    assert locks._merge_deltas(env["db"], "01PAGE", env["target"]) == 0
+    assert env["target"].read_text().count("append content") == 1
+    assert "unsupported content" not in env["target"].read_text()

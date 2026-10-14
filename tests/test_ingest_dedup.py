@@ -25,6 +25,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 import hera_db  # noqa: E402
 import ingest  # noqa: E402
 import conflicts  # noqa: E402
+import locks  # noqa: E402
 
 
 @pytest.fixture
@@ -130,6 +131,43 @@ def test_failure_mid_ingest_leaves_no_orphan_pages(vault):
                          if ".raw" not in p.parts)
     assert after_files == [f for f in before_files if ".raw" not in f.parts]
     assert entity.read_text() == before_entity
+
+
+def test_contended_page_aborts_ingest_without_overwriting_the_lock_holder(vault):
+    conn, root, mp = vault
+    _stub_extract(mp, "Auto-Waiting", "Playwright")
+    ingest.ingest_source(str(_write_source_file(root)), conn=conn)
+    target = root / "wiki" / "concepts" / "Auto-Waiting.md"
+    before_files = sorted(p for p in (root / "wiki").rglob("*.md") if ".raw" not in p.parts)
+    before_pages = conn.execute("SELECT id, title, path FROM pages ORDER BY id").fetchall()
+    before_fts = conn.execute("SELECT title, body FROM pages_fts ORDER BY rowid").fetchall()
+    payload = {
+        "source": {"title": "Contended Brief", "one_line": "x", "key_takeaways": [], "body": "b"},
+        "concepts": [{"title": "Auto-Waiting", "one_line": "changed", "body": "new body"}],
+        "entities": [], "warnings": [],
+    }
+    mp.setattr(ingest, "_call_claude_extract", lambda raw: payload)
+    real_lock = locks.lock
+    real_create = locks._try_create
+    lock_path = locks._lock_path_for(target)
+    holder_content = "# Content written by the lock holder\n"
+
+    def try_create(path):
+        if path == lock_path:
+            target.write_text(holder_content)
+        return real_create(path)
+
+    mp.setattr(locks, "_try_create", try_create)
+    mp.setattr(locks, "lock", lambda path, **kw: real_lock(path, retries=0, **kw))
+    with real_lock(target, retries=0, allow_delta=False):
+        with pytest.raises(locks.LockError):
+            ingest.ingest_source(str(_write_source_file(root, "contended.txt")), conn=conn)
+        assert target.read_text() == holder_content
+        assert lock_path.exists()
+    assert sorted(p for p in (root / "wiki").rglob("*.md") if ".raw" not in p.parts) == before_files
+    assert conn.execute("SELECT id, title, path FROM pages ORDER BY id").fetchall() == before_pages
+    assert conn.execute("SELECT title, body FROM pages_fts ORDER BY rowid").fetchall() == before_fts
+    assert conn.execute("SELECT count(*) FROM pending_deltas").fetchone()[0] == 0
 
 
 def test_index_md_lists_each_title_once(vault):

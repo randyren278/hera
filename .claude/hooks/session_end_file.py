@@ -118,7 +118,8 @@ def _is_transient(exc: BaseException) -> bool:
     own first line and the CLI's ERROR/fatal lines are read: the rest can be
     echoed transcript or model text that merely mentions "timeout"."""
     import embed  # type: ignore
-    if isinstance(exc, (embed.EmbedError, TimeoutError, ConnectionError)):
+    import locks  # type: ignore
+    if isinstance(exc, (embed.EmbedError, locks.LockError, TimeoutError, ConnectionError)):
         return True
     lines = str(exc).splitlines() or [""]
     probe = [lines[0]] + [l for l in lines[1:] if re.match(r"\s*(error|fatal)\b", l, re.I)]

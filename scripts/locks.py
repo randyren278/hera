@@ -1,17 +1,18 @@
 """locks.py — per-file locking + delta overflow (design §6, ADR-02).
 
 Contract: every vault write goes through `with lock(path): ...`. On lock
-contention after N retries the caller writes a delta file to
-wiki/.pending/<page_id>.<ulid>.delta.md instead — the write never blocks
-indefinitely. On the next successful lock acquisition for the same page,
-outstanding deltas are merged right after the holder's write (so a full rewrite
-cannot erase them). Stale locks are broken by atomic rename, never check-then-delete.
+contention after N retries, append callers can queue a delta file in
+wiki/.pending/<page_id>.<ulid>.delta.md. Full-page writers use allow_delta=False
+and fail with LockError instead. On the next successful lock acquisition for
+the same page, supported deltas are merged right after the holder's write
+(so a full rewrite cannot erase them). Unapplied deltas remain pending.
+Stale locks are broken by atomic rename, never check-then-delete.
 
 Design notes:
   - lockfile format: single line "<pid> <iso_timestamp>", atomic O_EXCL create
   - retry: 3 attempts with exponential-ish backoff (~5s total)
   - stale lock: age > STALE_SECONDS OR the recorded PID is dead → broken
-  - delta files carry `intent:` frontmatter: append | replace_section | frontmatter_patch
+  - new delta files support only `intent: append`
   - `pending_deltas` DB rows track outstanding files for --doctor and observability
 """
 from __future__ import annotations
@@ -177,7 +178,10 @@ def lock(target: pathlib.Path,
     Yields a LockAcquired on success. On contention with `allow_delta=True`,
     yields None and writes a delta file (caller must have provided
     page_id + delta_body). With `allow_delta=False`, raises LockError.
+    Unsupported delta intents raise ValueError before acquiring the lock.
     """
+    if allow_delta and intent != "append":
+        raise ValueError(f"unsupported delta intent: {intent!r}")
     target = pathlib.Path(target)
     lp = _lock_path_for(target)
     now = time.time()
@@ -254,28 +258,18 @@ def _write_delta(conn: sqlite3.Connection, page_id: str, target: pathlib.Path,
 def _merge_deltas(conn: sqlite3.Connection, page_id: str, target: pathlib.Path) -> int:
     """Merge outstanding deltas for `page_id` into `target`.
 
-    Simple policy for v1: apply deltas in `created_at` order. `append` deltas
-    are appended to the target body. `replace_section` and `frontmatter_patch`
-    are recorded as merged but only the append path is fully implemented; the
-    others are TODO (CP-2 will exercise them via the ingest flow if needed).
+    Apply append deltas in `created_at` order and return the applied count.
+    Missing files and legacy unsupported intents remain pending for recovery.
     """
     rows = conn.execute(
         "SELECT id, delta_path FROM pending_deltas "
         "WHERE page_id = ? AND merged_at IS NULL ORDER BY created_at",
         (page_id,),
     ).fetchall()
-    if not rows:
-        return 0
-
+    merged = 0
     for row_id, delta_path in rows:
         p = pathlib.Path(delta_path)
         if not p.exists():
-            # Delta file vanished — mark merged so we don't spin on it.
-            with conn:
-                conn.execute(
-                    "UPDATE pending_deltas SET merged_at = ? WHERE id = ?",
-                    (time.strftime("%Y-%m-%dT%H:%M:%S"), row_id),
-                )
             continue
         text = p.read_text()
         # Split frontmatter and body.
@@ -289,19 +283,17 @@ def _merge_deltas(conn: sqlite3.Connection, page_id: str, target: pathlib.Path) 
                 for ln in fm.splitlines():
                     if ln.startswith("intent:"):
                         intent = ln.split(":", 1)[1].strip()
-        if intent == "append":
-            with target.open("a", encoding="utf-8") as f:
-                f.write("\n" + body.rstrip() + "\n")
-        # (replace_section / frontmatter_patch: TODO — deliberately noisy.)
-        else:
-            with target.open("a", encoding="utf-8") as f:
-                f.write(f"\n<!-- unmerged intent={intent} — see {p.name} -->\n")
+        if intent != "append":
+            continue
+        with target.open("a", encoding="utf-8") as f:
+            f.write("\n" + body.rstrip() + "\n")
         with conn:
             conn.execute(
                 "UPDATE pending_deltas SET merged_at = ? WHERE id = ?",
                 (time.strftime("%Y-%m-%dT%H:%M:%S"), row_id),
             )
-    return len(rows)
+        merged += 1
+    return merged
 
 
 def sweep_stale_locks(root: pathlib.Path) -> int:
